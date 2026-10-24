@@ -1,0 +1,52 @@
+FAIL   1  Voter mobiles masked; tap reveals; contact buttons work
+        list: 11 full, 0 masked, 33 contact links; full record shows full number: true
+FAIL   2  Privacy note in the voter full record
+        no privacy note in the full record
+FAIL   3  A failed action shows its error inside the dialog; closing clears it
+        /assemblies: inside=false behind=true afterClose=stale | /mla-list?tab=flags: inside=false behind=true afterClose=stale
+FAIL   4  Bot Messages: failed load shows "couldn't load", no healthy-looking tiles
+        healthy-looking text: true; says couldn't load: false
+FAIL   5  Flow Simulator says when saved flows could not load
+        saved-flow list fails silently
+FAIL   6  "Route not found." replaced by plain words
+        /payments/setup: raw=true plain=false | /flow-images: raw=true plain=false
+FAIL   7  Nonexistent assembly: only "not found"
+        not found: true; Loading…: true; Create login buttons: 1
+FAIL   8  Payments: no-match search says so (not "queue is clear")
+        says queue is clear: true; says no match: false
+FAIL   9  Bell badge and "to tidy" count people/records
+        badge 2 vs people waiting 10; "to tidy" 4 vs records 7
+FAIL  10  Test-proofs chip opens only the test proofs, heading says so
+        url has test filter: false; page says "test": false; rows 4 vs chip 4
+FAIL  11  Phone: long station name wraps in the report header
+        4 header elements past the right edge
+FAIL  12  Phone: assembly voter-counts table reachable (scrolls in its box)
+        AC 5: 1 tables without a fitting scroll box | AC 10: 1 tables without a fitting scroll box | AC 27: 1 tables without a fitting scroll box
+FAIL  13  Phone: every control at least 44px (inline text links exempt)
+        /registrations/view/mock0080 button.cv-secret-btn "Show passcode" 22x22 | /registrations/view/mock0080 button.cv-secret-btn "Copy passcode" 22x22 | /registrations/view/mock0080 button.cv-secret-btn "Show passcode" 22x22 | /registrations/view/mock0080 button.cv-secret-btn "Copy passcode" 22x22 | /assemblies/1 button.cv-secret-btn "Show passcode" 22x22 | /assemblies/1 button.cv-secret-btn "Copy passcode" 22x22 | /booth-report?ac=1&booth=1 button.cv-link "Booth report" 88x17 | /assembly-analytics?ac=1 a.leaflet-control-zoom-in "+" 36x36 (+4)
+FAIL  14  Phone: list starts within the first screen (<700px)
+        /mla-list 738px | /assemblies 798px | /booths?ac=1 710px | /voters?assemblyId=1 596px
+FAIL  15  Chart: tap/click on a bar shows its number
+        click: nothing | tap: nothing
+FAIL  16  Chart wording: "in <month>" for months
+        summary: "80 registrations · peak 65 on August 2026"
+FAIL  17  Paid bar not green; serious clean-up items keep red
+        paid bar green: true; clean-up red icons kept: false (2 bad items)
+FAIL  18  Dashboard footer in plain words
+        footer: "Data Figures come from the admin API; charts are computed from the 80 registration records"
+FAIL  19  "Assign" is a real action to that candidate's booth assignment
+        booths cell control: none "" 
+FAIL  20  "With booths, not paid" waiting item opens exactly its rows
+        no "not paid" item under Waiting on you
+FAIL  21  Cloudinary thumbnails requested small (w_ transform)
+        0/1 Cloudinary thumbnails request a small size
+FAIL  22  Voters: Indian grouping in the pager; loading sign on page change
+        pager "1–25 of 2805 Page 1 of 113" grouped: false; loading sign: false
+FAIL  23  Labels: "Yes or No" kept; one name for test registrations
+        subtitle "1 candidate · paid status not yes or no"; Show option "Test entries"
+FAIL  24  Booth search "12": booth 12 comes first
+        booth report: first row 5 | booths: first row 5
+FAIL  25  Accessibility leftovers: skip link, arrow keys, closed menu, one bar colour
+        skip link false; arrow keys false; closed menu out of Tab order false; one bar colour false
+
+0 passed, 25 failed

@@ -1,0 +1,78 @@
+PASS   1  Voter mobiles masked; tap reveals; contact buttons work
+        list: 0 full, 6 masked, 18 contact links; tap reveals: true; full record shows full number: false
+PASS   2  Privacy note in the voter full record
+        note present
+SKIP   3  A failed action shows its error inside the dialog; closing clears it
+        skipped on staging: needs a mock-only failure/slowness knob
+SKIP   4  Bot Messages: failed load shows "couldn't load", no healthy-looking tiles
+        skipped on staging: needs a mock-only failure/slowness knob
+SKIP   5  Flow Simulator says when saved flows could not load
+        skipped on staging: needs a mock-only failure/slowness knob
+SKIP   6  "Route not found." replaced by plain words
+        skipped on staging: needs a mock-only failure/slowness knob
+PASS   7  Nonexistent assembly: only "not found"
+        not found: true; Loading…: false; Create login buttons: 0
+PASS   8  Payments: no-match search says so (not "queue is clear")
+        says queue is clear: false; says no match: true
+PASS   9  Bell badge and "to tidy" count people/records
+        badge 9 vs people waiting 9 (excl. 72 with booths, not paid); "to tidy" 6 vs records 6
+PASS  10  Test-proofs chip opens only the test proofs, heading says so
+        url has test filter: true; page says "test": true; rows 4 vs chip 4
+PASS  11  Phone: long station name wraps in the report header
+        0 header elements past the right edge
+PASS  12  Phone: assembly voter-counts table reachable (scrolls in its box)
+        AC 5: 0 tables without a fitting scroll box | AC 10: 0 tables without a fitting scroll box | AC 27: 0 tables without a fitting scroll box
+PASS  13  Phone: every control at least 44px (inline text links exempt)
+        all ≥44px
+PASS  14  Phone: list starts within the first screen (<700px)
+        /mla-list 535px | /assemblies 595px | /booths?ac=1 545px | /voters?assemblyId=1 596px
+PASS  15  Chart: tap/click on a bar shows its number
+        click: shows | reading on top: shows | keyboard End: shows | tap: shows | reading on top: shows | tap elsewhere clears: shows
+PASS  16  Chart wording: "in <month>" for months
+        summary: "81 registrations · peak 65 in August 2026"
+PASS  17  Paid bar not green; serious clean-up items keep red
+        paid bar green: false; clean-up red icons kept: true (0 bad items — nothing to tidy)
+PASS  18  Dashboard footer in plain words
+        footer: "Data Charts are built from all 81 registrations. Payments and registrations refresh every "
+PASS  19  "Assign" is a real action to that candidate's booth assignment
+        booths cell control: A "Assign booths" /registrations/view/6ac0b2c2dbb11ddbf8fb9c5c?assign=1; opens the booth picker: true
+PASS  20  "With booths, not paid" waiting item opens exactly its rows
+        chip 72; list says "72 candidates · with booths, not paid"
+PASS  21  Cloudinary thumbnails requested small (w_ transform)
+        60/60 request a small size; loaded: 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 2KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 3KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 2KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px, 72px 1KB, 60px, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px 1KB, 60px 1KB, 72px, 60px 1KB, 72px 1KB, 60px 1KB, 72px 2KB, 60px 1KB
+SKIP  22  Voters: Indian grouping in the pager; loading sign on page change
+        skipped on staging: needs a mock-only failure/slowness knob
+PASS  23  Labels: "Yes or No" kept; one name for test registrations
+        subtitle "0 candidates · paid status not Yes or No"; Show option "Test registrations"
+PASS  24  Booth search "12": booth 12 comes first
+        booth report: first row 12 | booths: first row 12
+PASS  25  Accessibility leftovers: skip link, arrow keys, closed menu, one bar colour
+        skip link true; arrow keys true; closed menu out of Tab order true; one bar colour true
+PASS  26  Unpaid candidate: Performance report lists booths without numbers; paid sees all
+        unpaid: 2 booths, 0 numbers in rows, 0 number tiles, 0 report buttons, says unlock true | paid: 2 booths, 8 numbers, 4 number tiles
+PASS  27  Activate plan pop-up: civic dialog, nothing cut off, QR + UPI + total visible on a phone
+        phone: civic true, fits true, title true, close true, QR true (small true), UPI true, total true, emoji false, Esc closes true, <44px: none | laptop: civic true, fits true, title true, close true, QR true (small true), UPI true, total true, emoji false, Esc closes true
+PASS  28  Report files need an app login (C10): no login → refused; admin and assembly login → the report
+        no login → 401; admin → 200 (report); assembly login → 200 (report)
+PASS  29  paid_status stored as 1 still counts as paid (B5): login says Yes, Home active, report has numbers
+        login paid_status "Yes"; Home: Activate buttons 0, PRO badge true; Performance report rows with numbers 2
+PASS  30  Payments › Received lists booth-plan candidates (C11): count ≥ 1, revenue > 0
+        API: 3 received (3 booth-plan, amounts ₹2360/tier ₹5900/tier ₹5900/tier); page: 3 rows, revenue shown true
+PASS  31  "Without mobile" voter filter works (C12): has_mobile=0 → only voters with no mobile
+        all 251601; with mobile 66948 (0 wrong); without mobile 184653 (0 wrong of 50 on page 1)
+PASS  32  Server hides voter numbers from unpaid candidates (C13): booth list only, no report links; paid sees all
+        unpaid: 2 booths, 0 with numbers, totals none, locked true, 0 report links | paid: 2 booths, 2 with numbers, totals present, 0 report links
+PASS  33  A1: a booth login lands on a notice page, no menu, no candidate pages; admin cannot generate more
+        lands on /booth-login; says "not in use" true, shows a contact number true; menu items 0; /candidate blocked true; admin "Generate … logins" buttons 0
+PASS  34  UX1: dashboard says one thing about paid — "Payments received" equals the pipeline's Paid
+        Payments received 3 vs pipeline Paid 3 ("Paid · 4% of booths assigned 3 0 with booths · 1 without booths yet")
+PASS  35  UX2 (re-run: no such candidate in this data — nothing to show)
+        no candidate that is paid without a payment record (mock should have one)
+PASS  36  UX4/5/10: registrations list without noise (paid only when Yes, no dangling dashes, one row menu, no passcodes, CSV export); voters Part column clean
+        rows 25: "No" pills 0, dangling dashes 0, row menus 25, loose icon buttons 0, passcode column false, export "Export CSV", menu items [Call, WhatsApp, View, Edit]; voters Part cells ending in a dash 0/25
+PASS  37  UX3/6/9 phone (re-run green; payment card threshold 360px)
+        EPIC search top 440px; registrations: visible filter selects 0, Filters button true, card height avg 154px; payment card height avg 331px
+PASS  38  UX7/8/10: one broadcast CTA on candidate Home; Logout lives in the account menu; station names not shouting
+        broadcast links on Home 1; Logout in the top bar 0; account menu true with Logout true; ALL-CAPS station names 0/2
+
+33 passed, 0 failed, 5 skipped — STAGING (35 and 37 re-run green)

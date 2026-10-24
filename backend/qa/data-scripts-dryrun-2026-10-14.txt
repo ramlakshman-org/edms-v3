@@ -1,0 +1,32 @@
+# Data-script dry runs on the staging copy (backup edm_20261014), 2026-10-14T09:57Z
+
+## normalize-paid-status.mjs (dry run)
+db election_app_staging: 2 non-standard paid_status values → 2 mean paid, 0 other (none)
+by group (paid under another spelling): {"11":2}
+dry run — add --apply to write
+
+## reconcile-payments.mjs (dry run)
+db election_app_staging — dry run
+proof 3004c4 ₹5900 2 booths: user found by mobile, group 11, paid "No" → mark paid, set transaction_id, relink ledger row, ledger group
+manual row ffacac: amount 3 looks like a booth count → ₹5900 (3 booths)
+manual row cbb016: amount 3 looks like a booth count → ₹5900 (3 booths)
+manual row 7b1dfd: amount 3 looks like a booth count → ₹5900 (3 booths)
+dry run — add --apply to write
+
+## APPLIED on staging only (rehearsal), 2026-10-14T09:57Z
+db election_app_staging: 2 non-standard paid_status values → 2 mean paid, 0 other (none)
+by group (paid under another spelling): {"11":2}
+updated 2 record(s) to 'Yes'
+db election_app_staging — APPLY
+proof 3004c4 ₹5900 2 booths: user found by mobile, group 11, paid "No" → mark paid, set transaction_id, relink ledger row, ledger group
+manual row ffacac: amount 3 looks like a booth count → ₹5900 (3 booths)
+manual row cbb016: amount 3 looks like a booth count → ₹5900 (3 booths)
+manual row 7b1dfd: amount 3 looks like a booth count → ₹5900 (3 booths)
+
+## second dry run after apply (must find nothing)
+db election_app_staging: 0 non-standard paid_status values → 0 mean paid, 0 other (none)
+by group (paid under another spelling): {}
+dry run — add --apply to write
+db election_app_staging — dry run
+proof 3004c4 ₹5900 2 booths: user found by id, group 11, paid "Yes" → nothing to do
+dry run — add --apply to write

@@ -1,0 +1,8 @@
+# written by setup.mjs / the scripts — never commit (controller copies, dumps with chat output)
+node_modules
+src/controllers/
+src/constants/
+out/
+src/services/paymentSettings.js
+src/services/paymentProof.js
+src/services/botContent.js

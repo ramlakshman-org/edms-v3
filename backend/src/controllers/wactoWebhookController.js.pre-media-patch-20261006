@@ -1,0 +1,516 @@
+import bcrypt from 'bcryptjs';
+import { getAppDb } from '../config/db.js';
+import { sendWactoText, sendWactoImage } from '../services/wactoService.js';
+
+const IMG = {
+  demo:                 'https://res.cloudinary.com/ajp3dslc/image/upload/v1791185720/edms-bot/edms-demo.jpg',
+  benefits:             'https://res.cloudinary.com/ajp3dslc/image/upload/v1791185722/edms-bot/edms-benefits.jpg',
+  support:              'https://res.cloudinary.com/ajp3dslc/image/upload/v1791185725/edms-bot/edms-support.jpg',
+  social:               'https://res.cloudinary.com/ajp3dslc/image/upload/v1791185728/edms-bot/edms-social.jpg',
+  registrationComplete: 'https://res.cloudinary.com/ajp3dslc/image/upload/v1791185730/edms-bot/edms-registration-complete.jpg',
+  brand:                'https://res.cloudinary.com/ajp3dslc/image/upload/v1791185739/edms-bot/edms-brand.jpg',
+  plans:                'https://res.cloudinary.com/ajp3dslc/image/upload/v1791185741/edms-bot/edms-plans.jpg',
+  faq:                  'https://res.cloudinary.com/ajp3dslc/image/upload/v1791185743/edms-bot/edms-faq.jpg',
+  credentials:          'https://res.cloudinary.com/ajp3dslc/image/upload/v1791185746/edms-bot/edms-credentials.jpg',
+};
+import { blankUser, maxUserId } from '../models/userModel.js';
+import { ROLES } from '../constants/roles.js';
+
+// ── Known values from EDMS-WhatsApp-v2 WACTO chatbot ──────────────────────────
+
+const ROLE_VALUES = new Set(['Planning to Contest', 'Confirmed Candidate', 'Campaign Team Member', 'Party Functionary']);
+
+const PARTY_VALUES = new Set([
+  'TVK', 'DMK', 'AIADMK', 'BJP', 'INC', 'NTK', 'PMK', 'VCK', 'MDMK',
+  'AMMK', 'DMDK', 'AISMK', 'Naam Tamilar Katchi', 'Other Party', 'Independent',
+]);
+
+const BODY_TYPE_VALUES = new Set(['Rural', 'Urban']);
+
+const POSITION_VALUES = new Set([
+  // Rural
+  'Village Panchayat Ward Member', 'Village Panchayat President',
+  'Panchayat Union Ward Member', 'District Panchayat Ward Member',
+  // Urban
+  'Town Panchayat', 'Municipality', 'Corporation',
+]);
+
+const DISTRICT_VALUES = new Set([
+  'Ariyalur', 'Chengalpattu', 'Chennai', 'Coimbatore', 'Cuddalore', 'Dharmapuri',
+  'Dindigul', 'Erode', 'Kallakurichi', 'Kanchipuram', 'Kanyakumari', 'Karur',
+  'Krishnagiri', 'Madurai', 'Mayiladuthurai', 'Nagapattinam', 'Namakkal', 'Nilgiris',
+  'Perambalur', 'Pudukkottai', 'Ramanathapuram', 'Ranipet', 'Salem', 'Sivaganga',
+  'Tenkasi', 'Thanjavur', 'Theni', 'Thoothukudi', 'Tiruchirappalli', 'Tirunelveli',
+  'Tirupathur', 'Tiruppur', 'Tiruvallur', 'Tiruvannamalai', 'Tiruvarur', 'Vellore',
+  'Viluppuram', 'Virudhunagar',
+]);
+
+// Navigation items to ignore (pure UI nav — carry no data)
+const NAV_ITEMS = new Set([
+  'More Districts', 'More Assemblies', 'More Parties', 'Button 1',
+]);
+
+// Top-level menu selections handled directly (not part of registration flow)
+const MENU_SELECTIONS = new Set([
+  'My Credentials', 'Demo', 'Benefits', 'FAQ',
+  'Website', 'Support', 'Purchase Plan', 'Social Media',
+]);
+
+const SESSION_TTL_MS = 30 * 60 * 1000;
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function extractSelection(msg) {
+  if (msg.type === 'interactive') {
+    const iv = msg.interactive;
+    if (iv?.type === 'list_reply') return iv.list_reply?.title?.trim() || null;
+    if (iv?.type === 'button_reply') return iv.button_reply?.title?.trim() || null;
+  }
+  if (msg.type === 'text') return msg.text?.body?.trim() || null;
+  return null;
+}
+
+function toMobile10(waPhone) {
+  const d = String(waPhone).replace(/\D/g, '');
+  if (d.length === 12 && d.startsWith('91')) return d.slice(2);
+  if (d.length === 10) return d;
+  return d;
+}
+
+// ── Session update logic ───────────────────────────────────────────────────────
+
+function applySelection(session, text) {
+  if (ROLE_VALUES.has(text)) { session.role = text; return; }
+  if (text === 'Yes, have a party') { session.party_affiliation = 'yes'; return; }
+  if (text === 'No, Independent') { session.party_affiliation = 'no'; session.party = 'Independent'; return; }
+  if (PARTY_VALUES.has(text) && text !== 'Independent') { session.party = text; return; }
+  if (BODY_TYPE_VALUES.has(text)) { session.body_type = text; return; }
+  if (POSITION_VALUES.has(text)) { session.position = text; return; }
+  // Once role+body_type+position+district are all set, the ONLY remaining step is
+  // assembly — capture it unconditionally, even if the assembly name matches a
+  // district (e.g. "Dharmapuri" is both a district and an assembly segment name).
+  if (session.role && session.body_type && session.position && session.district) {
+    // Once all 4 fields are set, the next selection is always assembly — unconditional
+    // (handles cases where assembly name == district name, e.g. "Dharmapuri", "Kallakurichi")
+    session.assembly = text; return;
+  }
+  if (DISTRICT_VALUES.has(text)) { session.district = text; session.assembly = null; return; }
+}
+
+function getRecommendedPlan(boothCount) {
+  if (boothCount <= 1) return { name: '1 Booth', price: '₹2,000' };
+  if (boothCount <= 5) return { name: 'Up to 5 Booths', price: '₹5,000' };
+  if (boothCount <= 10) return { name: 'Up to 10 Booths', price: '₹10,000' };
+  if (boothCount <= 25) return { name: 'Up to 25 Booths', price: '₹25,000' };
+  return { name: 'Up to 100 Booths', price: '₹50,000' };
+}
+
+function isComplete(session) {
+  return !!(session.role && session.body_type && session.position && session.district && session.assembly && session.booth_count);
+}
+
+// ── Top-level menu handlers ────────────────────────────────────────────────────
+
+async function handleMenuSelection(phone, selected, db, coll) {
+  const mobile = toMobile10(phone);
+
+  if (selected === 'My Credentials') {
+    const user = await db.collection('tbl_user').findOne({ mobile_no: mobile });
+    if (user?.password_str) {
+      await sendWactoImage(phone, IMG.credentials);
+      await sendWactoText(phone,
+        `🔑 *Your EDMS Credentials*\n\n📱 *Username:* \`${mobile}\`\n🔒 *Passcode:* \`${user.password_str}\`\n\n📲 Login at: https://tnedms.com/login\n\n_Do not share these credentials._`
+      );
+    } else {
+      await sendWactoText(phone,
+        `⚠️ No account found for *${mobile}*.\n\nTo register, type *Register* or select *Register* from the menu.`
+      );
+    }
+    return;
+  }
+
+  if (selected === 'Demo') {
+    await sendWactoImage(phone, IMG.demo);
+    await sendWactoText(phone,
+      `🎥 *EDMS Demo*\n\nWatch a walkthrough of the Election Data Management System:\n🌐 https://tnedms.com\n\nFor a live demo, contact us at *+91 99401 36163*.`
+    );
+    return;
+  }
+
+  if (selected === 'Benefits') {
+    await sendWactoImage(phone, IMG.benefits);
+    await sendWactoText(phone,
+      `✨ *Why EDMS?*\n\n✅ Real-time voter data management\n✅ Booth-wise reports\n✅ District & assembly analytics\n✅ WhatsApp alerts & updates\n✅ Mobile-friendly dashboard\n✅ Works offline\n\n🌐 https://tnedms.com`
+    );
+    return;
+  }
+
+  if (selected === 'FAQ') {
+    await sendWactoImage(phone, IMG.faq);
+    await sendWactoText(phone,
+      `❓ *Frequently Asked Questions*\n\n*Q: How do I login?*\nVisit https://tnedms.com/login — enter your mobile number as username.\n\n*Q: Forgot my passcode?*\nSelect *My Credentials* from the menu.\n\n*Q: How to register?*\nSelect *Register* from the menu and follow the steps.\n\n*Q: Need more help?*\nSelect *Support* from the menu.`
+    );
+    return;
+  }
+
+  if (selected === 'Website') {
+    await sendWactoText(phone, `🌐 *EDMS Website*\n\nhttps://tnedms.com`);
+    return;
+  }
+
+  if (selected === 'Support') {
+    // Start support ticket flow — store step in session
+    const coll = db.collection('tbl_wacto_sessions');
+    await coll.updateOne({ phone }, { $set: { phone, flow: 'support_issue', updated_at: new Date() } }, { upsert: true });
+    await sendWactoImage(phone, IMG.support);
+    await sendWactoText(phone,
+      `🆘 *EDMS Support*\n\nDescribe your issue and we will respond within *2 hours*:`
+    );
+    return;
+  }
+
+  if (selected === 'Purchase Plan') {
+    await coll.updateOne({ phone }, { $set: { phone, flow: 'purchase_select', updated_at: new Date() } }, { upsert: true });
+    await sendWactoImage(phone, IMG.plans);
+    await sendWactoText(phone,
+      `💳 *EDMS Subscription Plans*\n\n1️⃣ *1 Booth — ₹2,000*\n2️⃣ *Up to 5 Booths — ₹5,000*\n3️⃣ *Up to 10 Booths — ₹10,000*\n4️⃣ *Up to 25 Booths — ₹25,000*\n5️⃣ *Up to 100 Booths — ₹50,000*\n\n_Reply with 1, 2, 3, 4 or 5 to select a plan_`
+    );
+    return;
+  }
+
+  if (selected === 'Social Media') {
+    await coll.updateOne({ phone }, { $set: { phone, flow: 'social_service', updated_at: new Date() } }, { upsert: true });
+    await sendWactoImage(phone, IMG.social);
+    await sendWactoText(phone,
+      `📣 *Social Media Services*\n\nSelect a service:\n\n1️⃣ *WA Broadcast* — WhatsApp message to voter list\n2️⃣ *Audio SMS* — Voice message to voters\n3️⃣ *SMS Broadcast* — Text SMS to voter list\n\n_Reply with 1, 2 or 3_`
+    );
+    return;
+  }
+}
+
+// ── Registration on completion ─────────────────────────────────────────────────
+
+async function completeRegistration(phone, session, contactName) {
+  const mobile = toMobile10(phone);
+  const fullName = contactName || session.contact_name || mobile;
+  const passcode = String(Math.floor(100000 + Math.random() * 900000));
+  const db = getAppDb();
+
+  try {
+    // Look up assembly_id from constituency table (handles "Coimbatore North" → "Coimbatore (North)")
+    let assembly_id = 0;
+    let assembly_no = 0;
+    if (session.assembly) {
+      const words = session.assembly.replace(/[()]/g, '').trim().split(/\s+/);
+      const nameRegex = new RegExp(words.join('.*'), 'i');
+      const assemblyDoc = await db.collection('tbl_assembly_consitituency').findOne({ assembly_name: nameRegex });
+      if (assemblyDoc) {
+        assembly_id = assemblyDoc.assembly_no;
+        assembly_no = assemblyDoc.assembly_no;
+      }
+    }
+
+    const enquiry = {
+      full_name: fullName, firstname: fullName, mobile,
+      role: session.role, party: session.party || 'Independent',
+      body_type: session.body_type, position: session.position,
+      district_id: session.district, assembly_name: session.assembly,
+      assembly_id, assembly_no,
+      ward_number: session.booth_ward || '',
+      booth_count: session.booth_count || 0,
+      passcode, source: 'whatsapp_bot',
+    };
+
+    const existing = await db.collection('tbl_enquiry').findOne({ mobile });
+    if (existing) {
+      await db.collection('tbl_enquiry').updateOne({ mobile }, { $set: enquiry });
+    } else {
+      await db.collection('tbl_enquiry').insertOne({ ...enquiry, created_at: new Date().toISOString() });
+    }
+
+    const userExists = await db.collection('tbl_user').findOne({ mobile_no: mobile });
+    if (!userExists) {
+      const id = (await maxUserId()) + 1;
+      await db.collection('tbl_user').insertOne({
+        ...blankUser(), id,
+        user_group_id: ROLES.BOOTH_ALT,
+        first_name: fullName, mobile_no: mobile,
+        password_str: passcode,
+        password: await bcrypt.hash(passcode, 10),
+        district_id: session.district,
+        assembly_id, assembly_no,
+        candidate_type: session.body_type,
+        position: session.position,
+        is_user_login: true,
+      });
+    } else {
+      await db.collection('tbl_user').updateOne({ mobile_no: mobile }, {
+        $set: {
+          password_str: passcode,
+          password: await bcrypt.hash(passcode, 10),
+          first_name: fullName,
+          district_id: session.district,
+          assembly_id, assembly_no,
+          is_user_login: true,
+        },
+      });
+    }
+
+    // Send registration complete image + credentials
+    await sendWactoImage(phone, IMG.registrationComplete);
+    const credText = `✅ *Registration Complete!*\n\n🎉 Welcome to EDMS, *${fullName}*!\n\n🔑 *Username:* \`${mobile}\`\n🔒 *Passcode:* \`${passcode}\`\n\n📱 Login at: https://tnedms.com/login\n\n_Save these credentials. Do not share them._`;
+    await sendWactoText(phone, credText);
+
+    // Immediately follow with pricing recommendation
+    if (session.booth_count) {
+      const plan = getRecommendedPlan(session.booth_count);
+      await sendWactoImage(phone, IMG.plans);
+      await sendWactoText(phone,
+        `━━━━━━━━━━━━━━━━━━\n📊 *Activate Your Voter Data Access*\n\nAssembly: *${session.assembly}*\nBooths: *${session.booth_count}*\n\nRecommended plan: *${plan.name} — ${plan.price}*\n\nReply *PAY* to get your secure payment link instantly.\n━━━━━━━━━━━━━━━━━━`
+      );
+    }
+
+    console.log(`[WACTO Bot] Registered ${mobile} (${fullName}) via WhatsApp chatbot`);
+  } catch (e) {
+    console.error('[WACTO Bot] Registration failed:', e.message);
+    await sendWactoText(phone, 'Sorry, registration failed. Please try again or visit https://tnedms.com/register').catch(() => {});
+  }
+}
+
+// ── Multi-step flow handler ────────────────────────────────────────────────────
+
+async function handleFlowStep(phone, text, session, coll, db) {
+  const mobile = toMobile10(phone);
+
+  // ── Support: 2-step ticket collection ──────────────────────────────────────
+  if (session.flow === 'support_issue') {
+    // Step 1 answer received — store issue, ask for name
+    await coll.updateOne({ phone }, { $set: { flow: 'support_name', support_issue: text, updated_at: new Date() } });
+    await sendWactoText(phone, `📝 Got it. What is your name? _(type "skip" to skip)_`);
+    return;
+  }
+
+  if (session.flow === 'support_name') {
+    const name = text.toLowerCase() === 'skip' ? '' : text;
+    await db.collection('tbl_support_tickets').insertOne({
+      phone, mobile,
+      issue: session.support_issue,
+      name,
+      created_at: new Date(),
+    });
+    await coll.deleteOne({ phone });
+    await sendWactoText(phone,
+      `✅ *Support Request Received!*\n\nOur team will respond within *2 hours*.\n\nFor urgent help:\n📞 *+91 99401 36163*\n⏰ 8am – 10pm daily\n\nThank you! 🙏`
+    );
+    console.log(`[WACTO Support] Ticket saved for ${mobile}`);
+    return;
+  }
+
+  // ── Purchase Plan: 2-step (tier select → booth count) ──────────────────────
+  if (session.flow === 'purchase_select') {
+    const planMap = {
+      '1': { name: '1 Booth',           price: '₹2,000',  maxBooths: 1   },
+      '2': { name: 'Up to 5 Booths',   price: '₹5,000',  maxBooths: 5   },
+      '3': { name: 'Up to 10 Booths',  price: '₹10,000', maxBooths: 10  },
+      '4': { name: 'Up to 25 Booths',  price: '₹25,000', maxBooths: 25  },
+      '5': { name: 'Up to 100 Booths', price: '₹50,000', maxBooths: 100 },
+    };
+    const plan = planMap[text];
+    if (!plan) {
+      await sendWactoText(phone, `Please reply with *1*, *2*, *3*, *4* or *5* to select a plan.`);
+      return;
+    }
+    await coll.updateOne({ phone }, {
+      $set: { flow: 'purchase_booths', purchase_plan: plan.name, purchase_price: plan.price, updated_at: new Date() }
+    });
+    await sendWactoText(phone,
+      `✅ *${plan.name} — ${plan.price}*\n\nHow many booths do you currently manage?\n_(Enter a number)_`
+    );
+    return;
+  }
+
+  if (session.flow === 'purchase_booths') {
+    const boothCount = parseInt(text, 10) || text;
+    await db.collection('tbl_purchase_interests').insertOne({
+      phone, mobile,
+      plan: session.purchase_plan,
+      price: session.purchase_price,
+      booth_count: boothCount,
+      created_at: new Date(),
+    });
+    await coll.deleteOne({ phone });
+    await sendWactoText(phone,
+      `✅ *${session.purchase_plan} — ${session.purchase_price}*\nBooths: *${boothCount}*\n\n💳 *How to Purchase:*\n1. Visit: https://tnedms.com/register\n2. Log in (or register first)\n3. Select your plan & pay via UPI / card / net banking\n\n⏱ Access activated within *30 minutes* of payment.\n📞 Help: *+91 99401 36163*`
+    );
+    console.log(`[WACTO Purchase] Interest saved for ${mobile} — ${session.purchase_plan} (${boothCount} booths)`);
+    return;
+  }
+
+  // ── Social Media: 4-step campaign request ──────────────────────────────────
+  if (session.flow === 'social_service') {
+    const serviceMap = { '1': 'WA Broadcast', '2': 'Audio SMS', '3': 'SMS Broadcast' };
+    const service = serviceMap[text] ||
+      (['WA Broadcast', 'Audio SMS', 'SMS Broadcast'].includes(text) ? text : null);
+    if (!service) {
+      await sendWactoText(phone, `Please reply with *1*, *2* or *3* to select a service.`);
+      return;
+    }
+    await coll.updateOne({ phone }, { $set: { flow: 'social_name', social_service: service, updated_at: new Date() } });
+    await sendWactoText(phone, `✅ *${service}* selected.\n\nYour *name and party*:`);
+    return;
+  }
+
+  if (session.flow === 'social_name') {
+    await coll.updateOne({ phone }, { $set: { flow: 'social_message', social_name: text, updated_at: new Date() } });
+    await sendWactoText(phone, `📝 *Message or script* (Tamil/English):`);
+    return;
+  }
+
+  if (session.flow === 'social_message') {
+    await coll.updateOne({ phone }, { $set: { flow: 'social_area', social_message: text, updated_at: new Date() } });
+    await sendWactoText(phone, `📍 *Target area* (district/ward):`);
+    return;
+  }
+
+  if (session.flow === 'social_area') {
+    await db.collection('tbl_campaign_requests').insertOne({
+      phone, mobile,
+      service: session.social_service,
+      name: session.social_name,
+      message: session.social_message,
+      target_area: text,
+      created_at: new Date(),
+    });
+    await coll.deleteOne({ phone });
+    await sendWactoText(phone,
+      `✅ *Campaign Request Submitted!*\n\n📣 Service: *${session.social_service}*\n\nOur team will contact you within *4 hours* to confirm:\n• Target audience & area\n• Message approval\n• Pricing & schedule\n\n📞 *+91 99401 36163*`
+    );
+    console.log(`[WACTO Social] Campaign request saved for ${mobile} — ${session.social_service}`);
+    return;
+  }
+}
+
+// ── Main webhook handler ───────────────────────────────────────────────────────
+
+export async function handleWactoWebhook(req, res) {
+  res.sendStatus(200); // Acknowledge immediately
+
+  try {
+    const change = req.body?.entry?.[0]?.changes?.[0]?.value;
+    if (!change?.messages?.length) return;
+
+    const msg = change.messages[0];
+    const phone = msg.from;
+    const contactName = change.contacts?.[0]?.profile?.name || '';
+
+    const selected = extractSelection(msg);
+    if (!selected) return;
+
+    // Ignore navigation-only items (pure pagination, no data value)
+    if (NAV_ITEMS.has(selected)) return;
+
+    // Skip plain text "ok" acknowledgements and root menu triggers ("Hi", "Hello", etc.)
+    if (msg.type === 'text') {
+      const low = selected.toLowerCase();
+      if (low === 'ok' || low === 'hi' || low === 'hello' || low === 'start' || low === 'menu') return;
+
+      // PAY intent — user wants to purchase after registration nudge
+      if (low === 'pay') {
+        const mobile = toMobile10(phone);
+        const db = getAppDb();
+        const user = await db.collection('tbl_user').findOne({ mobile_no: mobile });
+        if (!user) {
+          await sendWactoText(phone, `Please register first before purchasing.\n\nType *Register* or select Register from the menu.`);
+          return;
+        }
+        if (user.paid_status === 'Yes') {
+          await sendWactoText(phone, `✅ Your EDMS subscription is already active!\n\n📲 Login at: https://tnedms.com/login\nUsername: \`${mobile}\`\nPasscode: \`${user.password_str}\``);
+          return;
+        }
+        await sendWactoText(phone,
+          `💳 *Complete Your Payment*\n\n1. Visit: https://tnedms.com/login\n2. Log in with your credentials\n3. Select your plan & pay via UPI / card / net banking\n\n⏱ Access activated within *30 minutes* of payment.\n📞 Help: *+91 99401 36163*`
+        );
+        return;
+      }
+    }
+
+    const db = getAppDb();
+    const coll = db.collection('tbl_wacto_sessions');
+
+    // Check for active multi-step flow BEFORE menu check
+    // (user is mid-flow typing a text answer, not selecting a menu item)
+    if (msg.type === 'text') {
+      const activeSession = await coll.findOne({ phone });
+
+      // Intercept booth count reply during registration
+      if (activeSession?.awaiting_booth_count) {
+        const count = parseInt(selected, 10);
+        if (!count || count < 1) {
+          await sendWactoText(phone, `Please reply with a valid number.\n\nHow many booths do you manage in *${activeSession.assembly}* assembly?`);
+          return;
+        }
+        activeSession.booth_count = count;
+        activeSession.awaiting_booth_count = false;
+        await coll.updateOne({ phone }, { $set: { booth_count: count, awaiting_booth_count: false, updated_at: new Date() } });
+        if (isComplete(activeSession)) {
+          await coll.deleteOne({ phone });
+          await completeRegistration(phone, activeSession, contactName);
+        }
+        return;
+      }
+
+      if (activeSession?.flow) {
+        await handleFlowStep(phone, selected, activeSession, coll, db);
+        return;
+      }
+    }
+
+    // Handle top-level menu options directly (not part of registration session)
+    if (MENU_SELECTIONS.has(selected)) {
+      await handleMenuSelection(phone, selected, db, coll);
+      return;
+    }
+
+    // Returning user check — if they trigger Register but already have an account, send credentials
+    if (selected === 'Register') {
+      const mobile = toMobile10(phone);
+      const existing = await db.collection('tbl_user').findOne({ mobile_no: mobile });
+      if (existing?.password_str) {
+        await sendWactoImage(phone, IMG.credentials);
+        await sendWactoText(phone,
+          `👋 *Welcome back, ${existing.first_name || mobile}!*\n\nYou're already registered with EDMS.\n\n🔑 *Username:* \`${mobile}\`\n🔒 *Passcode:* \`${existing.password_str}\`\n\n📲 Login at: https://tnedms.com/login\n\n_Need help? Select *Support* from the menu._`
+        );
+        return;
+      }
+      // New user — show brand intro before WACTO flow begins
+      await sendWactoImage(phone, IMG.brand);
+    }
+
+    // Expire old sessions
+    let session = await coll.findOne({ phone });
+    if (session?.updated_at) {
+      const age = Date.now() - new Date(session.updated_at).getTime();
+      if (age > SESSION_TTL_MS) session = null;
+    }
+    if (!session) {
+      session = { phone, contact_name: contactName };
+    }
+
+    applySelection(session, selected);
+    session.updated_at = new Date();
+    if (contactName) session.contact_name = contactName;
+
+    await coll.updateOne({ phone }, { $set: session }, { upsert: true });
+
+    if (isComplete(session)) {
+      await coll.deleteOne({ phone });
+      await completeRegistration(phone, session, contactName);
+    } else if (session.assembly && !session.booth_count && !session.awaiting_booth_count) {
+      // Assembly just captured — ask booth count before completing registration
+      await coll.updateOne({ phone }, { $set: { awaiting_booth_count: true, updated_at: new Date() } });
+      await sendWactoText(phone, `How many booths do you manage in *${session.assembly}* assembly?\n\nReply with a number. _(e.g. 3)_`);
+    }
+  } catch (e) {
+    console.error('[WACTO Webhook]', e.message);
+  }
+}

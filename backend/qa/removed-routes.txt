@@ -1,0 +1,11 @@
+# Live routes removed on purpose. One per line: `method path` as in the live manifest. The live-parity guard skips
+# these and fails if one of them comes back. Reason and decision noted per block.
+
+# Ram, 2026-10-14: CRM inbox, WhatsApp templates and CRM team were removed because any login could read every CRM
+# chat and send messages from the account (no admin guard).
+#
+# 2026-10-24: the Telecalling / CRM feature was RESTORED, now properly role-guarded — /team/* is Super-Admin only and
+# /crm/* is limited to Super Admin + CRM Team Members (telecallers, group 12), with agents scoped to their own
+# assigned conversations. Because these routes are intentionally back, they are no longer listed here.
+#
+# (No routes are currently removed.)

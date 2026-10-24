@@ -1,0 +1,19 @@
+# Final data-script plan for live (decided by Ram 2026-10-14): test proof and 3 test manual rows skipped; CRM agents deactivated
+# Dry runs on a fresh staging copy (backup edm_20261014), 2026-10-14T11:03Z
+
+## normalize-paid-status.mjs
+db election_app_staging: 2 non-standard paid_status values → 2 mean paid, 0 other (none)
+by group (paid under another spelling): {"11":2}
+dry run — add --apply to write
+
+## reconcile-payments.mjs --skip=3004c4,ffacac,cbb016,7b1dfd
+db election_app_staging — dry run — skipping 3004c4, ffacac, cbb016, 7b1dfd
+proof 3004c4 ₹5900 2 booths: SKIPPED (--skip) — left alone
+manual row ffacac: SKIPPED (--skip) — left alone
+manual row cbb016: SKIPPED (--skip) — left alone
+manual row 7b1dfd: SKIPPED (--skip) — left alone
+dry run — add --apply to write
+
+## deactivate-crm-agents.mjs
+db election_app_staging — dry run: 3 CRM agent login(s), 3 active (records …a75f34, …ce471c, …8e09d9)
+dry run — add --apply to write

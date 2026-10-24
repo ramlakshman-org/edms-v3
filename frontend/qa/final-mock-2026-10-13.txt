@@ -1,0 +1,52 @@
+PASS   1  Voter mobiles masked; tap reveals; contact buttons work
+        list: 0 full, 11 masked, 33 contact links; tap reveals: true; full record shows full number: false
+PASS   2  Privacy note in the voter full record
+        note present
+PASS   3  A failed action shows its error inside the dialog; closing clears it
+        /assemblies: inside=true behind=false afterClose=clear | /mla-list?tab=flags: inside=true behind=false afterClose=clear | /flow-images: inside=true behind=false afterClose=clear
+PASS   4  Bot Messages: failed load shows "couldn't load", no healthy-looking tiles
+        failed load - healthy-looking: false, says couldn't load: true, empty editor shown: false; normal load fine: true
+PASS   5  Flow Simulator says when saved flows could not load
+        failed load says so: true; normal load: 13 saved flows, no warning: true
+PASS   6  "Route not found." replaced by plain words
+        /payments/setup: raw=false plain=true | /flow-images: raw=false plain=true
+PASS   7  Nonexistent assembly: only "not found"
+        not found: true; Loading…: false; Create login buttons: 0
+PASS   8  Payments: no-match search says so (not "queue is clear")
+        says queue is clear: false; says no match: true
+PASS   9  Bell badge and "to tidy" count people/records
+        badge 81 vs people waiting 81; "to tidy" 7 vs records 7
+PASS  10  Test-proofs chip opens only the test proofs, heading says so
+        url has test filter: true; page says "test": true; rows 4 vs chip 4
+PASS  11  Phone: long station name wraps in the report header
+        0 header elements past the right edge
+PASS  12  Phone: assembly voter-counts table reachable (scrolls in its box)
+        AC 5: 0 tables without a fitting scroll box | AC 10: 0 tables without a fitting scroll box | AC 27: 0 tables without a fitting scroll box
+PASS  13  Phone: every control at least 44px (inline text links exempt)
+        all ≥44px
+PASS  14  Phone: list starts within the first screen (<700px)
+        /mla-list 535px | /assemblies 595px | /booths?ac=1 525px | /voters?assemblyId=1 596px
+PASS  15  Chart: tap/click on a bar shows its number
+        click: shows | reading on top: shows | keyboard End: shows | tap: shows | reading on top: shows | tap elsewhere clears: shows
+PASS  16  Chart wording: "in <month>" for months
+        summary: "80 registrations · peak 65 in August 2026"
+PASS  17  Paid bar not green; serious clean-up items keep red
+        paid bar green: false; clean-up red icons kept: true (2 bad items)
+PASS  18  Dashboard footer in plain words
+        footer: "Data Charts are built from all 80 registrations. Payments and registrations refresh every "
+PASS  19  "Assign" is a real action to that candidate's booth assignment
+        booths cell control: A "Assign booths" /registrations/view/mock0066?assign=1; opens the booth picker: true
+PASS  20  "With booths, not paid" waiting item opens exactly its rows
+        chip 71; list says "71 candidates · with booths, not paid"
+PASS  21  Cloudinary thumbnails requested small (w_ transform)
+        1/1 request a small size; loaded: 72px 3KB
+PASS  22  Voters: Indian grouping in the pager; loading sign on page change
+        pager "1–25 of 2,805 Page 1 of 113" grouped: true; loading sign: true
+PASS  23  Labels: "Yes or No" kept; one name for test registrations
+        subtitle "1 candidate · paid status not Yes or No"; Show option "Test registrations"
+PASS  24  Booth search "12": booth 12 comes first
+        booth report: first row 12 | booths: first row 12
+PASS  25  Accessibility leftovers: skip link, arrow keys, closed menu, one bar colour
+        skip link true; arrow keys true; closed menu out of Tab order true; one bar colour true
+
+25 passed, 0 failed

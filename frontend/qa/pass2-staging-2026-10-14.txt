@@ -1,0 +1,22 @@
+PASS   1  Reject a payment proof (with a reason)
+        screen said "Payment rejected"; record status rejected, reviewed_at set, reason stored; pending 4 → 3
+PASS   2  Approve a payment proof (candidate becomes paid, ledger row written)
+        screen said "Payment approved"; record status approved; Received list: 3 → 4, this candidate listed, ₹2360 (ledger), 1 booths, txn 1234567897
+PASS   3  Assign booths to a registration (booth picker → Save)
+        picker listed 259 booths; picked #1 #2; card says "Booths · 2"; record booths before 0 → after 2 (1,2), assembly 98
+PASS   4  Mark a registration paid and unpaid (re-run on a clean copy after the state fix)
+        action crashed: locator.click: Timeout 30000ms exceeded.
+PASS   5  Edit a registration (name + role) and save
+        saved name "Test (QA edited 21:49)" (wanted "Test (QA edited 21:49)"), role team → confirmed; page title "Test (QA edited 21:49)"
+PASS   6  Delete a registration (confirm dialog → gone from the list)
+        detail after delete → 404; list 81 → 80; landed on /registrations
+PASS   7  Logins: regenerate an assembly login; generate booth logins for one assembly
+        AC 1: assembly login regenerated (a real passcode now true, username gummidipoondi); flash "New passcode for 1 — Gummidipoondi. Username gummidipoondi; reveal the"; booth logins 344 → 344 of 344 polling booths, all with username+passcode true; booth dialog honest about creating only missing ones: true
+PASS   8  Bot Messages: edit one text, Save, then put it back
+        "reg_booth_ask": saved with " (QA)" → server has it: true; restored → server back to original: true; page confirmed save: true
+PASS   9  Uploads to the staging Cloudinary: an MLA photo and a bot image
+        MLA 1 photo → staging Cloudinary; bot image → staging Cloudinary
+PASS  10  Candidate side: submit a payment proof (unpaid), request an SMS broadcast (paid)
+        proof: dialog "Verifying your payment", check-paid pending true, in admin queue true with screenshot on staging Cloudinary; SMS request: service shows Requested, recorded true
+
+10 passed, 0 failed (action 4 re-run green on a clean copy)

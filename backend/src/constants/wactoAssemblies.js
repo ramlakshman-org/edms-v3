@@ -1,0 +1,46 @@
+/**
+ * District -> assembly rows exactly as the EDMS WACTO flow lists them (EN and TA branches share
+ * these titles). Generated from "EDM/wacto/EDMS_bilingual_v7.json" (assembly list nodes, minus the
+ * "More Assemblies" paging row). The webhook accepts an assembly tap only if it belongs to the
+ * district the user picked. Regenerate whenever district/assembly rows change in the flow.
+ */
+export const DISTRICT_ASSEMBLIES = {
+  "Ariyalur": ["Ariyalur", "Jayankondam"],
+  "Chengalpattu": ["Shozhinganallur", "Pallavaram", "Tambaram", "Chengalpattu", "Thiruporur", "Cheyyur", "Madurantakam"],
+  "Chennai": ["Dr.Radhakrishnan Nagar", "Perambur", "Kolathur", "Villivakkam", "Thiru-Vi-Ka-Nagar", "Egmore", "Royapuram", "Harbour", "Chepauk-Thiruvallikeni", "Thousand Lights", "Anna Nagar", "Virugampakkam", "Saidapet", "Thiyagarayanagar", "Mylapore", "Velachery"],
+  "Coimbatore": ["Mettuppalayam", "Sulur", "Kavundampalayam", "Coimbatore North", "Thondamuthur", "Coimbatore South", "Singanallur", "Kinathukadavu", "Pollachi", "Valparai"],
+  "Cuddalore": ["Tittakudi", "Vriddhachalam", "Neyveli", "Panruti", "Cuddalore", "Kurinjipadi", "Bhuvanagiri", "Chidambaram", "Kattumannarkoil"],
+  "Dharmapuri": ["Palacodu", "Pennagaram", "Dharmapuri", "Pappireddipatti", "Harur"],
+  "Dindigul": ["Palani", "Oddanchatram", "Athoor", "Nilakkottai", "Natham", "Dindigul", "Vedasandur"],
+  "Erode": ["Erode East", "Erode West", "Modakkurichi", "Perundurai", "Bhavani", "Anthiyur", "Gobichettipalayam", "Bhavanisagar"],
+  "Kallakurichi": ["Ulundurpettai", "Rishivandiyam", "Sankarapuram", "Kallakurichi"],
+  "Kanchipuram": ["Alandur", "Sriperumbudur", "Uthiramerur", "Kancheepuram"],
+  "Kanyakumari": ["Kanniyakumari", "Nagercoil", "Colachal", "Padmanabhapuram", "Vilavancode", "Killiyoor"],
+  "Karur": ["Aravakurichi", "Karur", "Krishnarayapuram", "Kulithalai"],
+  "Krishnagiri": ["Uthangarai", "Bargur", "Krishnagiri", "Veppanahalli", "Hosur", "Thalli"],
+  "Madurai": ["Melur", "Madurai East", "Sholavandan", "Madurai North", "Madurai South", "Madurai Central", "Madurai West", "Thiruparankundram", "Thirumangalam", "Usilampatti"],
+  "Mayiladuthurai": ["Sirkazhi", "Mayiladuthurai", "Poompuhar"],
+  "Nagapattinam": ["Nagapattinam", "Kilvelur", "Vedaranyam"],
+  "Namakkal": ["Rasipuram", "Senthamangalam", "Namakkal", "Paramathi-Velur", "Tiruchengodu", "Kumarapalayam"],
+  "Nilgiris": ["Udhagamandalam", "Gudalur", "Coonoor"],
+  "Perambalur": ["Perambalur", "Kunnam"],
+  "Pudukkottai": ["Gandarvakkottai", "Viralimalai", "Pudukkottai", "Thirumayam", "Alangudi", "Aranthangi"],
+  "Ramanathapuram": ["Paramakudi", "Tiruvadanai", "Ramanathapuram", "Mudhukulathur"],
+  "Ranipet": ["Arakkonam", "Sholinghur", "Ranipet", "Arcot"],
+  "Salem": ["Gangavalli", "Attur", "Yercaud", "Omalur", "Mettur", "Edappadi", "Sankari", "Salem West", "Salem North", "Salem South", "Veerapandi"],
+  "Sivaganga": ["Karaikudi", "Tiruppattur", "Sivaganga", "Manamadurai"],
+  "Tenkasi": ["Sankarankovil", "Vasudevanallur", "Kadayanallur", "Tenkasi", "Alangulam"],
+  "Thanjavur": ["Thiruvidaimarudur", "Kumbakonam", "Papanasam", "Thiruvaiyaru", "Thanjavur", "Orathanadu", "Pattukkottai", "Peravurani"],
+  "Theni": ["Andipatti", "Periyakulam", "Bodinayakanur", "Cumbum"],
+  "Thoothukudi": ["Vilathikulam", "Thoothukkudi", "Tiruchendur", "Srivaikuntam", "Ottapidaram", "Kovilpatti"],
+  "Tiruchirappalli": ["Manapparai", "Srirangam", "Tiruchirappalli West", "Tiruchirappalli East", "Thiruverumbur", "Lalgudi", "Manachanallur", "Musiri", "Thuraiyur"],
+  "Tirunelveli": ["Tirunelveli", "Ambasamudram", "Palayamkottai", "Nanguneri", "Radhapuram"],
+  "Tirupathur": ["Vaniyambadi", "Ambur", "Jolarpet", "Tirupattur"],
+  "Tiruppur": ["Dharapuram", "Kangayam", "Avanashi", "Tiruppur North", "Tiruppur South", "Palladam", "Udumalaipettai", "Madathukulam"],
+  "Tiruvallur": ["Gummidipoondi", "Ponneri", "Tiruttani", "Thiruvallur", "Poonamallee", "Avadi", "Maduravoyal", "Ambattur", "Madavaram", "Thiruvottiyur"],
+  "Tiruvannamalai": ["Chengam", "Tiruvannamalai", "Kilpennathur", "Kalasapakkam", "Polur", "Arani", "Cheyyar", "Vandavasi"],
+  "Tiruvarur": ["Thiruthuraipoondi", "Mannargudi", "Thiruvarur", "Nannilam"],
+  "Vellore": ["Katpadi", "Vellore", "Anaikattu", "Kilvaithinankuppam", "Gudiyattam"],
+  "Viluppuram": ["Gingee", "Mailam", "Tindivanam", "Vanur", "Viluppuram", "Vikravandi", "Tirukkoyilur"],
+  "Virudhunagar": ["Rajapalayam", "Srivilliputhur", "Sattur", "Sivakasi", "Virudhunagar", "Aruppukkottai", "Tiruchuli"],
+};
