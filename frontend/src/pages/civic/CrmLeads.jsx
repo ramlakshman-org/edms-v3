@@ -79,6 +79,11 @@ export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace
   const [canClaim, setCanClaim] = useState(false);
   useEffect(() => { if (isAdmin) api.get('/crm/agents').then(({ data }) => setAgents(data.agents || [])).catch(() => {}); }, [isAdmin]);
   useEffect(() => { api.get('/crm/settings').then(({ data }) => setCanClaim(!!data.config?.claim_unassigned)).catch(() => {}); }, []);
+  useEffect(() => {
+    const onLeadUpdated = () => load();
+    window.addEventListener('crm-lead-updated', onLeadUpdated);
+    return () => window.removeEventListener('crm-lead-updated', onLeadUpdated);
+  }, []);
 
   const load = () => {
     setLoading(true);

@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import PIOPIY from 'piopiyjs';
-import { Headset, Loader } from 'lucide-react';
+import { Headset, Loader, PhoneCall, CheckCircle2 } from 'lucide-react';
 import api from '../api/client.js';
+import { Modal, Button, Input, Field } from './ui.jsx';
+import { PRIMARY_OUTCOMES, statusMeta } from './leadStatus.js';
 
 // Browser softphone (TeleCMI PIOPIY WebRTC). The telecaller talks through the
 // computer — no mobile rings, and the lead sees the account DID as caller id.
@@ -18,6 +20,7 @@ export function WebPhoneProvider({ children }) {
   const [reason, setReason] = useState('');       // why unavailable (admin / missing creds)
   const [call, setCall] = useState(null);         // { contact, number, state, startedAt }
   const [recSync, setRecSync] = useState(0);       // bumped after an auto recording-sync, so the inbox refreshes
+  const [postCall, setPostCall] = useState(null);  // mandatory post-call wrap-up disposition modal
   const callRef = useRef(null);
   callRef.current = call;
   const pendingRef = useRef(null);                 // an outbound web call we just asked TeleCMI to bridge
@@ -78,7 +81,18 @@ export function WebPhoneProvider({ children }) {
           log('hangup/ended', o);
           bridgingRef.current = false;
           const c = callRef.current;
-          if (c) logOutcome(c, c.state === 'answered' ? 'answered' : (o?.code && o.code !== 200 ? 'failed' : 'missed'));
+          if (c) {
+            const dur = c.startedAt ? Math.max(1, Math.round((Date.now() - c.startedAt) / 1000)) : 0;
+            logOutcome(c, c.state === 'answered' ? 'answered' : (o?.code && o.code !== 200 ? 'failed' : 'missed'));
+            // Trigger mandatory wrap-up modal
+            setPostCall({
+              number: c.number,
+              name: c.contact?.name || c.contact?.contact_name || `Candidate ${String(c.number).slice(-4)}`,
+              duration: dur,
+              wasAnswered: c.state === 'answered',
+              contact: c.contact,
+            });
+          }
           // An answered call has a recording on TeleCMI a few seconds later. Pull it
           // in automatically (a couple of attempts, since processing takes a moment)
           // so the voice recording appears in the thread on its own — no manual sync.
@@ -210,7 +224,119 @@ export function WebPhoneProvider({ children }) {
     <Ctx.Provider value={value}>
       {children}
       <CallBar />
+      <PostCallModal postCall={postCall} onClose={() => setPostCall(null)} />
     </Ctx.Provider>
+  );
+}
+
+// Mandatory Post-Call Wrap-up Modal. Enforces that a telecaller CANNOT leave
+// a call without selecting an outcome and logging what happened.
+function PostCallModal({ postCall, onClose }) {
+  const [selectedOutcome, setSelectedOutcome] = useState(
+    postCall?.wasAnswered ? '' : 'not_answered'
+  );
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    if (postCall) {
+      setSelectedOutcome(postCall.wasAnswered ? '' : 'not_answered');
+      setNote('');
+      setErr('');
+    }
+  }, [postCall?.number]);
+
+  if (!postCall) return null;
+
+  const phone = String(postCall.number || '').replace(/\D/g, '').slice(-10);
+
+  const save = () => {
+    if (!selectedOutcome) {
+      setErr('Please tap an outcome for this call (mandatory).');
+      return;
+    }
+    setSaving(true);
+    setErr('');
+    api.post(`/crm/conversations/${phone}/lead-status`, {
+      lead_status: selectedOutcome,
+      note: note.trim() || undefined,
+    })
+      .then(() => {
+        window.dispatchEvent(new CustomEvent('crm-lead-updated', { detail: { phone } }));
+        onClose();
+      })
+      .catch((e) => setErr(e?.response?.data?.message || 'Could not save call outcome.'))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <Modal open={true} title="Call Ended · Mandatory Disposition" onClose={() => {}} width={500}>
+      <div style={{ display: 'grid', gap: 14 }}>
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
+          <div style={{ fontWeight: 600, fontSize: 15, color: '#1e293b' }}>
+            {postCall.name || `Candidate ${phone.slice(-4)}`}
+          </div>
+          <div style={{ fontSize: 13, color: '#64748b', marginTop: 3, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontWeight: 500 }}>{phone}</span>
+            <span>·</span>
+            <span>{postCall.wasAnswered ? `${postCall.duration}s talk time` : 'Not answered / Missed'}</span>
+          </div>
+        </div>
+
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#334155' }}>
+            Select Call Outcome <span style={{ color: '#ef4444' }}>*</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {PRIMARY_OUTCOMES.map((k) => {
+              const m = statusMeta(k);
+              const isSelected = selectedOutcome === k;
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  className={`cv-pill cv-pill--${m.tone}`}
+                  style={{
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    padding: '7px 12px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontWeight: 600,
+                    outline: isSelected ? '2px solid #2563eb' : 'none',
+                    transform: isSelected ? 'scale(1.04)' : 'none',
+                    boxShadow: isSelected ? '0 2px 4px rgba(37,99,235,0.2)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => { setSelectedOutcome(k); setErr(''); }}
+                >
+                  <span className="cv-pill-dot" />
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <Field label="Call Note (optional)">
+          <Input
+            value={note}
+            placeholder="e.g. He is in a party meeting, asked to call back at 6 PM"
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </Field>
+
+        {err && <div style={{ color: '#ef4444', fontSize: 12, fontWeight: 500 }}>{err}</div>}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+          <Button onClick={save} disabled={saving || !selectedOutcome}>
+            {saving ? 'Saving…' : 'Save Outcome & Complete Call'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
