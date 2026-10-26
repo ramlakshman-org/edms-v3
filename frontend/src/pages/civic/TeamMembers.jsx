@@ -13,7 +13,7 @@ import {
   PhoneOff,
   ThumbsUp,
   ThumbsDown,
-  Crown,
+  Sparkles,
   Users,
 } from 'lucide-react';
 import api from '../../api/client.js';
@@ -136,7 +136,7 @@ export default function TeamMembers() {
   ];
 
   return (
-    <>
+    <div className="cv-page">
       <PageHeader
         eyebrow="Telecalling"
         title="Team Members"
@@ -160,7 +160,7 @@ export default function TeamMembers() {
           <Kpi icon={ThumbsUp} label="Interested" value={(stats.interested || 0).toLocaleString('en-IN')} tone="ok" />
           <Kpi icon={ThumbsDown} label="Not interested" value={(stats.not_interested || 0).toLocaleString('en-IN')} tone="bad" />
           <Kpi icon={PhoneOff} label="Unreachable" value={((stats.switch_off || 0) + (stats.not_answered || 0) + (stats.will_call_back || 0)).toLocaleString('en-IN')} tone="warn" />
-          <Kpi icon={Crown} label="Active Pro" value={(stats.pro_users || 0).toLocaleString('en-IN')} tone="info" />
+          <Kpi icon={Sparkles} label="Active Pro" value={(stats.pro_users || 0).toLocaleString('en-IN')} tone="info" />
         </div>
       )}
 
@@ -205,6 +205,6 @@ export default function TeamMembers() {
           </>
         )}
       </Modal>
-    </>
+    </div>
   );
 }

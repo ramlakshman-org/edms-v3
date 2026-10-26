@@ -7,15 +7,13 @@ import {
   ThumbsUp,
   ThumbsDown,
   Smartphone,
-  Star,
+  Sparkles,
   Users,
   ListChecks,
   Headphones,
-  Crown,
   Target,
   ArrowRight,
   MessageSquare,
-  Sparkles,
   TrendingUp,
   RefreshCw,
   AlertTriangle,
@@ -215,7 +213,7 @@ export default function TelecallerDashboard({ adminView = false }) {
                 tone="warn"
               />
               <Kpi
-                icon={Crown}
+                icon={Sparkles}
                 label="Active Pro users"
                 value={(teamStats.pro_users || 0).toLocaleString('en-IN')}
                 tone="info"
@@ -408,14 +406,14 @@ export default function TelecallerDashboard({ adminView = false }) {
               tone="warn"
             />
             <Kpi
-              icon={Star}
+              icon={Sparkles}
               label="Converted"
               value={(stats.converted || 0).toLocaleString('en-IN')}
               note={`${stats.conversion_rate || 0}% conversion`}
               tone="ok"
             />
             <Kpi
-              icon={Crown}
+              icon={Sparkles}
               label="Active Pro users"
               value={(stats.pro || 0).toLocaleString('en-IN')}
               note="Paid subscription"
@@ -467,7 +465,7 @@ export default function TelecallerDashboard({ adminView = false }) {
                     .map((s) => {
                       const m = statusMeta(s.status);
                       return {
-                        label: `${m.emoji} ${m.label}`,
+                        label: m.label,
                         value: s.count,
                       };
                     })}
@@ -539,7 +537,7 @@ export default function TelecallerDashboard({ adminView = false }) {
                           <div className="cv-lead-name-row">
                             <span className="cv-lead-name">{leadName}</span>
                             {r.is_registered && <Pill tone="ok">Registered</Pill>}
-                            {r.is_pro && <Pill tone="info">⭐ Pro</Pill>}
+                            {r.is_pro && <Pill tone="info" icon={Sparkles}>Pro</Pill>}
                           </div>
                           <div className="cv-lead-sub">
                             <span className="cv-mono-sm" style={{ fontWeight: 500, color: 'var(--cv-ink-2)' }}>{r.clean_mobile}</span>
@@ -550,8 +548,8 @@ export default function TelecallerDashboard({ adminView = false }) {
                       </div>
 
                       <div className="cv-lead-right">
-                        <Pill tone={m.tone}>
-                          {m.emoji} {m.label}
+                        <Pill tone={m.tone} dot>
+                          {m.label}
                         </Pill>
                         <span className="cv-muted" style={{ fontSize: 12 }}>
                           {fmtDateTime(r.last_message_at)}

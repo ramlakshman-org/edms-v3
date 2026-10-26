@@ -96,7 +96,7 @@ export default function LeadReports() {
         </div>
       ),
     },
-    { key: 'status', label: 'Latest status', render: (r) => { const m = statusMeta(r.lead_status); return <Pill tone={m.tone}>{m.emoji} {m.label}</Pill>; } },
+    { key: 'status', label: 'Latest status', render: (r) => { const m = statusMeta(r.lead_status); return <Pill tone={m.tone} dot>{m.label}</Pill>; } },
     { key: 'changes', label: 'Calls/changes', align: 'right', render: (r) => (r.status_changes ?? 0).toLocaleString('en-IN') },
     ...(isAdmin ? [{ key: 'agent', label: 'Telecaller', medium: false, render: (r) => r.agent || '—' }] : []),
     { key: 'when', label: 'Last status at', align: 'right', medium: false, render: (r) => <span className="cv-muted cv-mono-sm" style={{ fontSize: 12 }}>{fmtDateTime(r.last_status_at)}</span> },

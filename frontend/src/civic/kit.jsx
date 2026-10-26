@@ -36,10 +36,11 @@ export function Card({ title, meta, action, children, flush, className = '' }) {
   );
 }
 
-export function Pill({ tone = 'neutral', dot, children }) {
+export function Pill({ tone = 'neutral', dot, icon: Icon, children }) {
   return (
     <span className={`cv-pill cv-pill--${tone}`}>
       {dot && <span className="cv-pill-dot" />}
+      {Icon && <Icon size={12} style={{ flex: 'none' }} />}
       {children}
     </span>
   );

@@ -20,6 +20,8 @@ import {
   CreditCard,
   RefreshCw,
   Info,
+  Sparkles,
+  Lock,
 } from 'lucide-react';
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -129,10 +131,10 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
       medium: false,
       render: (r) => (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <Pill tone={r.is_registered ? 'ok' : 'neutral'}>
+          <Pill tone={r.is_registered ? 'ok' : 'neutral'} dot>
             {r.is_registered ? 'Registered' : 'Not registered'}
           </Pill>
-          {r.is_pro && <Pill tone="info">⭐ Pro</Pill>}
+          {r.is_pro && <Pill tone="info" icon={Sparkles}>Pro</Pill>}
         </div>
       ),
     },
@@ -141,7 +143,7 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
       label: 'Lead status',
       render: (r) => {
         const m = statusMeta(r.lead_status);
-        return <Pill tone={m.tone}>{m.emoji} {m.label}</Pill>;
+        return <Pill tone={m.tone} dot>{m.label}</Pill>;
       },
     },
     {
@@ -152,7 +154,7 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
         r.assigned_agent_id ? (
           <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
             {r.assigned_agent_name || 'Assigned'}
-            {r.taken && <Pill tone="info">🔒 Taken</Pill>}
+            {r.taken && <Pill tone="info" icon={Lock}>Claimed</Pill>}
           </span>
         ) : (
           <Pill tone="warn">Unassigned</Pill>
@@ -244,7 +246,7 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
       render: (r) => {
         if (r.is_pro) return <Pill tone="ok" dot>Approved</Pill>;
         const m = statusMeta(r.lead_status);
-        return <Pill tone={m.tone}>{m.emoji} {m.label}</Pill>;
+        return <Pill tone={m.tone} dot>{m.label}</Pill>;
       },
     },
     {
@@ -456,15 +458,15 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
               style={{ minWidth: 160 }}
             >
               <option value="all">All Lead Statuses</option>
-              <option value="interested">🟢 Interested</option>
-              <option value="first_call_complete">📞 1st call done</option>
-              <option value="second_call_complete">📞 2nd call done</option>
-              <option value="third_call_complete">📞 3rd call done</option>
-              <option value="switch_off">📱 Switched off</option>
-              <option value="not_answered">📵 Not answered</option>
-              <option value="will_call_back">⏰ Will call back</option>
-              <option value="not_interested">🔴 Not interested</option>
-              <option value="converted">⭐ Converted</option>
+              <option value="interested">Interested</option>
+              <option value="first_call_complete">1st call done</option>
+              <option value="second_call_complete">2nd call done</option>
+              <option value="third_call_complete">3rd call done</option>
+              <option value="switch_off">Switched off</option>
+              <option value="not_answered">Not answered</option>
+              <option value="will_call_back">Will call back</option>
+              <option value="not_interested">Not interested</option>
+              <option value="converted">Converted</option>
             </Select>
 
             {isAdmin && (
@@ -633,25 +635,25 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
     <Modal open={!!contact} title={contact.name || `Candidate ${String(contact.clean_mobile).slice(-4)}`} onClose={onClose} width={620}>
       <div style={{ display: 'grid', gap: 14 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Pill tone={contact.is_registered ? 'ok' : 'neutral'}>
+          <Pill tone={contact.is_registered ? 'ok' : 'neutral'} dot>
             {contact.is_registered ? 'Registered' : 'Not registered'}
           </Pill>
-          {contact.is_pro && <Pill tone="info">⭐ Active Pro</Pill>}
+          {contact.is_pro && <Pill tone="info" icon={Sparkles}>Active Pro</Pill>}
           {unassigned ? (
             <Pill tone="warn">Unassigned</Pill>
           ) : (
             <Pill tone="neutral">
               <UserCheck size={12} /> {contact.assigned_agent_name}
-              {contact.taken ? ' · 🔒 Taken' : ''}
+              {contact.taken ? ' · Claimed' : ''}
             </Pill>
           )}
-          <Pill tone={contact.window_active ? 'ok' : 'warn'}>
+          <Pill tone={contact.window_active ? 'ok' : 'warn'} dot>
             {contact.window_active ? 'WhatsApp window open' : 'Window closed'}
           </Pill>
         </div>
 
-        <div className="cv-muted" style={{ fontSize: 13 }}>
-          📱 <span className="cv-mono-sm">{contact.clean_mobile}</span> · {contact.district || '—'} · {contact.assembly || '—'}
+        <div className="cv-muted" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Phone size={13} /> <span className="cv-mono-sm">{contact.clean_mobile}</span> · {contact.district || '—'} · {contact.assembly || '—'}
           {contact.position && contact.position !== '-' ? ` · ${contact.position}` : ''}
         </div>
 
@@ -701,15 +703,19 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
                   style={{
                     cursor: 'pointer',
                     border: 'none',
-                    fontSize: 13,
-                    padding: '6px 11px',
+                    fontSize: 12.5,
+                    padding: '5px 10px',
                     opacity: saving ? 0.6 : 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
                     transition: 'transform 0.1s ease',
                   }}
                   disabled={saving}
                   onClick={() => setStatus(k)}
                 >
-                  {m.emoji} {m.label}
+                  <span className="cv-pill-dot" />
+                  {m.label}
                 </button>
               );
             })}
@@ -776,7 +782,7 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
                     }}
                   >
                     <span style={{ fontSize: 13 }}>
-                      {h.direction === 'inbound' ? '📥 Incoming' : '📤 Outgoing'}
+                      {h.direction === 'inbound' ? 'Incoming' : 'Outgoing'}
                       {h.duration ? ` · ${h.duration}s` : ''}
                       <span className="cv-muted">
                         {' '}
