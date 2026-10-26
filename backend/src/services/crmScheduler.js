@@ -20,7 +20,8 @@ async function tick() {
     const now = new Date();
     const { frequency, hour } = cfg.auto_distribute;
     let dueKey = null;
-    if (frequency === 'hourly') dueKey = `h-${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}`;
+    if (frequency === '10min') dueKey = `10m-${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${Math.floor(now.getMinutes() / 10)}`;
+    else if (frequency === 'hourly') dueKey = `h-${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}`;
     else if (frequency === 'daily' && now.getHours() === hour) dueKey = `d-${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
     else if (frequency === 'weekly' && now.getDay() === 1 && now.getHours() === hour) dueKey = `w-${now.getFullYear()}-${weekOf(now)}`;
     if (!dueKey) return;

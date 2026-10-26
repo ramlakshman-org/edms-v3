@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Phone,
   PhoneCall,
@@ -22,13 +23,16 @@ import {
   Info,
   Sparkles,
   Lock,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useWebPhone, WebPhoneBadge } from '../../civic/webphone.jsx';
 import { PageHeader, Card, Pill, Kpi, inr } from '../../civic/kit.jsx';
 import { DataTable, Pager, Button, Select, Input, Modal, Textarea, Field, loadError, fmtDateTime, waLink } from '../../civic/ui.jsx';
-import { statusMeta, STATUS_BUTTONS } from '../../civic/leadStatus.js';
+import { statusMeta, STATUS_BUTTONS, PRIMARY_OUTCOMES, CALL_MILESTONES } from '../../civic/leadStatus.js';
 
 const PAGE_SIZE = 50;
 
@@ -42,9 +46,21 @@ const initials = (name, mobile) => {
 // CRM lead workspace. Admins see every conversation (filter by telecaller, assign,
 // distribute); telecallers see only their own assigned leads. `scope` narrows the
 // list for the telecaller follow-up menus (unregistered / registered / paid).
-export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle }) {
+export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace', subtitle }) {
   const { user } = useAuth();
   const isAdmin = Number(user?.group_id || user?.user_group_id) === 1;
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const queueParam = searchParams.get('queue'); // 'incomplete' | 'registered'
+  const scopeParam = searchParams.get('scope') || scope; // 'paid' | 'all'
+
+  const activeQueue = queueParam === 'incomplete' || scopeParam === 'unregistered'
+    ? 'incomplete'
+    : queueParam === 'registered' || scopeParam === 'registered'
+    ? 'registered'
+    : scopeParam === 'paid'
+    ? 'paid'
+    : 'all';
 
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -78,28 +94,40 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
   useEffect(load, [page, agentId, statusFilter]);
   useEffect(() => { const t = setTimeout(() => { setPage(1); load(); }, 350); return () => clearTimeout(t); }, [search]);
 
-  // Client-side scope for the telecaller follow-up menus.
+  // Queue counts calculated across the loaded dataset
+  const incompleteCount = useMemo(() => rows.filter((r) => !r.is_registered).length, [rows]);
+  const registeredCount = useMemo(() => rows.filter((r) => r.is_registered).length, [rows]);
+  const paidCount = useMemo(() => rows.filter((r) => r.is_pro).length, [rows]);
+
+  // Client-side queue filter
   const view = useMemo(() => rows.filter((r) => {
-    if (scope === 'unregistered') return !r.is_registered;
-    if (scope === 'registered') return r.is_registered;
-    if (scope === 'paid') {
+    if (activeQueue === 'incomplete') return !r.is_registered;
+    if (activeQueue === 'registered') return r.is_registered;
+    if (activeQueue === 'paid') {
       if (paidTab === 'received') return r.is_pro;
       if (paidTab === 'interested') return r.lead_status === 'interested';
       return true;
     }
     return true;
-  }), [rows, scope, paidTab]);
+  }), [rows, activeQueue, paidTab]);
+
+  const setQueue = (q) => {
+    setPage(1);
+    if (q === 'all') setSearchParams({});
+    else if (q === 'paid') setSearchParams({ scope: 'paid' });
+    else setSearchParams({ queue: q });
+  };
 
   // Summary statistics for KPI cards
   const stats = useMemo(() => {
-    const list = scope === 'paid' ? rows : view;
+    const list = activeQueue === 'paid' ? rows : view;
     const registered = list.filter((r) => r.is_registered).length;
     const pro = list.filter((r) => r.is_pro).length;
     const interested = list.filter((r) => r.lead_status === 'interested').length;
     const unreachable = list.filter((r) => ['switch_off', 'not_answered', 'will_call_back'].includes(r.lead_status)).length;
     const converted = list.filter((r) => ['converted', 'registration_completed'].includes(r.lead_status)).length;
     return { total: list.length, registered, pro, interested, unreachable, converted };
-  }, [rows, view, scope]);
+  }, [rows, view, activeQueue]);
 
   const refreshOpen = (phone) =>
     api.get(`/crm/conversations/${phone}`)
@@ -313,17 +341,15 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
       .finally(() => setBusy(false));
   };
 
-  const pageEyebrow = scope === 'paid' ? undefined : (scope !== 'all' ? 'Follow-up' : (isAdmin ? 'Telecalling' : 'My work'));
+  const pageEyebrow = 'Telecalling';
   const pageTitle =
-    scope === 'paid'
-      ? 'Payments'
-      : title === 'CRM Leads' && !isAdmin
-      ? 'My Leads / Chats'
-      : scope === 'unregistered'
-      ? 'Incomplete Registrations'
-      : scope === 'registered'
-      ? 'Registrations'
-      : title;
+    activeQueue === 'incomplete'
+      ? 'Incomplete Registrations Queue'
+      : activeQueue === 'registered'
+      ? 'Registered Candidates Queue'
+      : activeQueue === 'paid'
+      ? 'Payment Follow-up Queue'
+      : 'Telecalling Workspace';
 
   return (
     <div className="cv-page">
@@ -331,12 +357,13 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
         eyebrow={pageEyebrow}
         title={pageTitle}
         subtitle={
-          subtitle ||
-          (scope === 'paid'
-            ? 'Verify UPI QR payment proofs and see the payments received'
-            : isAdmin
-            ? 'Every WhatsApp lead. Assign, distribute, and set call outcomes.'
-            : 'Your assigned leads. Call, then set the outcome with a note.')
+          activeQueue === 'incomplete'
+            ? 'Candidates who dropped off during registration. Call via softphone to guide them through booth selection.'
+            : activeQueue === 'registered'
+            ? 'Active candidates. Call via softphone to demonstrate the dashboard and pitch the Pro booth plan.'
+            : activeQueue === 'paid'
+            ? 'Verify UPI QR payment proofs and manage Pro plan activations.'
+            : 'All assigned leads. Click “Call” to ring via TeleCMI softphone, then log outcomes.'
         }
         actions={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -356,23 +383,80 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
       {err && <div className="cv-alert cv-alert--bad" style={{ marginBottom: 12 }}>{err}</div>}
       {msg && <div className="cv-alert cv-alert--ok" style={{ marginBottom: 12 }} onClick={() => setMsg('')}>{msg}</div>}
 
+      {/* Primary Category Queue Tabs */}
+      <div className="cv-tabs-row" style={{ marginBottom: 16, background: '#ffffff', borderRadius: 8, border: '1px solid var(--cv-line, #e2e8f0)', padding: '4px 8px' }}>
+        <div className="cv-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeQueue === 'incomplete'}
+            className={`cv-tab ${activeQueue === 'incomplete' ? 'cv-tab--on' : ''}`}
+            onClick={() => setQueue('incomplete')}
+          >
+            🟡 Incomplete Registrations <span className="cv-tab-count">{incompleteCount}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeQueue === 'registered'}
+            className={`cv-tab ${activeQueue === 'registered' ? 'cv-tab--on' : ''}`}
+            onClick={() => setQueue('registered')}
+          >
+            🟢 Registered Candidates <span className="cv-tab-count">{registeredCount}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeQueue === 'paid'}
+            className={`cv-tab ${activeQueue === 'paid' ? 'cv-tab--on' : ''}`}
+            onClick={() => setQueue('paid')}
+          >
+            Payment Follow-up <span className="cv-tab-count">{paidCount}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeQueue === 'all'}
+            className={`cv-tab ${activeQueue === 'all' ? 'cv-tab--on' : ''}`}
+            onClick={() => setQueue('all')}
+          >
+            All Leads <span className="cv-tab-count">{rows.length}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Contextual Queue Guidance Notice */}
+      {activeQueue === 'incomplete' && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#92400e', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <Info size={16} style={{ flexShrink: 0 }} />
+          <span><strong>Incomplete Queue:</strong> Candidates who started bot or web signup but dropped off before booth selection. <strong>Goal:</strong> Call via TeleCMI to assist registration & explain voter roll advantages.</span>
+        </div>
+      )}
+
+      {activeQueue === 'registered' && (
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#166534', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+          <span><strong>Registered Queue:</strong> Candidates with active accounts. <strong>Goal:</strong> Walk them through their candidate portal and pitch the Pro Plan to unlock full booth slips.</span>
+        </div>
+      )}
+
       {/* KPI Metrics Summary Strip */}
-      <div className={`cv-kpis cv-kpis--even ${scope === 'paid' ? 'cv-pay-kpis' : ''}`} style={{ marginBottom: 16 }}>
-        {scope === 'unregistered' ? (
+      <div className={`cv-kpis cv-kpis--even ${activeQueue === 'paid' ? 'cv-pay-kpis' : ''}`} style={{ marginBottom: 16 }}>
+        {activeQueue === 'incomplete' ? (
           <>
             <Kpi icon={UserPlus} label="Incomplete leads" value={inr(stats.total)} tone="warn" />
             <Kpi icon={ThumbsUp} label="Interested" value={inr(stats.interested)} tone="ok" />
             <Kpi icon={PhoneOff} label="Unreachable" value={inr(stats.unreachable)} tone="warn" />
-            <Kpi icon={Star} label="Converted" value={inr(stats.converted)} tone="ok" />
+            <Kpi icon={Sparkles} label="Converted" value={inr(stats.converted)} tone="ok" />
           </>
-        ) : scope === 'registered' ? (
+        ) : activeQueue === 'registered' ? (
           <>
             <Kpi icon={ClipboardList} label="Registered candidates" value={inr(stats.total)} tone="ok" />
-            <Kpi icon={Crown} label="Active Pro" value={inr(stats.pro)} tone="info" />
+            <Kpi icon={Sparkles} label="Active Pro" value={inr(stats.pro)} tone="info" />
             <Kpi icon={ThumbsUp} label="Interested" value={inr(stats.interested)} tone="ok" />
-            <Kpi icon={Star} label="Converted" value={inr(stats.converted)} tone="ok" />
+            <Kpi icon={Sparkles} label="Converted" value={inr(stats.converted)} tone="ok" />
           </>
-        ) : scope === 'paid' ? (
+        ) : activeQueue === 'paid' ? (
           <>
             <Kpi label="To follow up" value={inr(stats.interested)} note={stats.interested ? `${stats.interested} leads to follow up` : 'queue is clear'} tone={stats.interested ? 'warn' : undefined} />
             <Kpi label="Active Pro" value={inr(stats.pro)} note={stats.pro ? `${stats.pro} paid subscriptions` : 'nothing waiting'} />
@@ -383,21 +467,21 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
           <>
             <Kpi icon={Users} label="Total leads" value={inr(total)} />
             <Kpi icon={ClipboardList} label="Registered" value={inr(stats.registered)} tone="ok" />
-            <Kpi icon={Crown} label="Active Pro" value={inr(stats.pro)} tone="info" />
+            <Kpi icon={Sparkles} label="Active Pro" value={inr(stats.pro)} tone="info" />
             <Kpi icon={ThumbsUp} label="Interested" value={inr(stats.interested)} tone="ok" />
             <Kpi icon={PhoneOff} label="Unreachable" value={inr(stats.unreachable)} tone="warn" />
           </>
         )}
       </div>
 
-      {scope === 'paid' && (
+      {activeQueue === 'paid' && (
         <details className="cv-disclosure cv-pay-help">
           <summary><Info size={15} /> How payment follow-up works</summary>
           <p>Candidates who paid the UPI QR and upgraded to Active Pro are listed here. Verify their payment status, assist with candidate setup, and follow up with interested leads for renewal or additional booth coverage.</p>
         </details>
       )}
 
-      <Card flush className={scope === 'paid' ? 'cv-pay-queue' : undefined}>
+      <Card flush className={activeQueue === 'paid' ? 'cv-pay-queue' : undefined}>
         {scope === 'paid' ? (
           <div className="cv-tabs-row">
             <div className="cv-tabs" role="tablist">
@@ -538,10 +622,13 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
   const [note, setNote] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showMilestones, setShowMilestones] = useState(false);
+
   useEffect(() => {
     if (contact) {
       setNote('');
       setNotes(contact.agent_notes || '');
+      setShowMilestones(false);
     }
   }, [contact?.clean_mobile]);
   if (!contact) return null;
@@ -564,7 +651,7 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
     setSaving(true);
     api.post(`/crm/conversations/${phone}/lead-status`, { lead_status, note })
       .then(({ data }) => {
-        setMsg(data.message || 'Status updated.');
+        setMsg(data.message || 'Call outcome logged.');
         setNote('');
         onChanged();
       })
@@ -632,11 +719,11 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
   );
 
   return (
-    <Modal open={!!contact} title={contact.name || `Candidate ${String(contact.clean_mobile).slice(-4)}`} onClose={onClose} width={620}>
+    <Modal open={!!contact} title={contact.name || `Candidate ${String(contact.clean_mobile).slice(-4)}`} onClose={onClose} width={640}>
       <div style={{ display: 'grid', gap: 14 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Pill tone={contact.is_registered ? 'ok' : 'neutral'} dot>
-            {contact.is_registered ? 'Registered' : 'Not registered'}
+          <Pill tone={contact.is_registered ? 'ok' : 'warn'} dot>
+            {contact.is_registered ? 'Registered Candidate' : 'Incomplete Registration'}
           </Pill>
           {contact.is_pro && <Pill tone="info" icon={Sparkles}>Active Pro</Pill>}
           {unassigned ? (
@@ -647,14 +734,36 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
               {contact.taken ? ' · Claimed' : ''}
             </Pill>
           )}
-          <Pill tone={contact.window_active ? 'ok' : 'warn'} dot>
-            {contact.window_active ? 'WhatsApp window open' : 'Window closed'}
-          </Pill>
         </div>
 
-        <div className="cv-muted" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Phone size={13} /> <span className="cv-mono-sm">{contact.clean_mobile}</span> · {contact.district || '—'} · {contact.assembly || '—'}
-          {contact.position && contact.position !== '-' ? ` · ${contact.position}` : ''}
+        {/* Dynamic Telecaller Talking Points Banner */}
+        {!contact.is_registered ? (
+          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#92400e', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <Info size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <strong>Incomplete Registration Lead:</strong> Candidate started but dropped off before booth selection.
+              <div style={{ marginTop: 4, fontSize: 12.5 }}>
+                <strong>Talking Points:</strong> Help them finish booth selection for {contact.assembly ? `AC ${contact.assembly}` : (contact.district || 'their constituency')}, explain voter categorization & door-to-door tracking advantages, and activate their candidate login.
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#166534', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+            <div>
+              <strong>Registered Candidate:</strong> Active login created ({contact.clean_mobile}).
+              <div style={{ marginTop: 4, fontSize: 12.5 }}>
+                <strong>Talking Points:</strong> Congratulate them on registration. Walk them through logging into their portal, demo the booth voter slip features, and pitch upgrading to the <strong>Pro Plan</strong> to unlock full voter lists.
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="cv-muted" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <Phone size={13} /> <span className="cv-mono-sm" style={{ fontWeight: 600 }}>{contact.clean_mobile}</span>
+          {contact.district && contact.district !== '-' && <span>· District: {contact.district}</span>}
+          {contact.assembly && contact.assembly !== '-' && <span>· AC {contact.assembly}</span>}
+          {contact.position && contact.position !== '-' && <span>· Role: {contact.position}</span>}
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -665,7 +774,7 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
             disabled={saving || webConnecting}
             title={
               webphone.ready
-                ? 'Call from the browser — talk through your computer (no mobile rings)'
+                ? 'Call from the browser — talk through your computer headset via TeleCMI'
                 : webConnecting
                 ? 'Web phone is connecting — wait until it says “Call (web)”'
                 : 'Rings your phone first, then connects to the lead'
@@ -678,8 +787,9 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
             href={waLink(contact.clean_mobile)}
             target="_blank"
             rel="noreferrer"
+            title="Open Wacto/WhatsApp chat"
           >
-            <MessageCircle size={13} /> WhatsApp
+            <MessageCircle size={13} /> Open WhatsApp
           </a>
           {unassigned && (canClaim || isAdmin) && (
             <Button size="sm" variant="ghost" icon={Hand} onClick={claim} disabled={saving}>
@@ -690,10 +800,10 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
 
         <div>
           <div className="cv-field-label" style={{ marginBottom: 6 }}>
-            Call outcome <span className="cv-muted">(each tap is logged with time)</span>
+            Call outcome <span className="cv-muted">(every tap logs a separate permanent call record)</span>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {STATUS_BUTTONS.map((k) => {
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {PRIMARY_OUTCOMES.map((k) => {
               const m = statusMeta(k);
               return (
                 <button
@@ -704,11 +814,12 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
                     cursor: 'pointer',
                     border: 'none',
                     fontSize: 12.5,
-                    padding: '5px 10px',
+                    padding: '6px 11px',
                     opacity: saving ? 0.6 : 1,
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 5,
+                    fontWeight: 500,
                     transition: 'transform 0.1s ease',
                   }}
                   disabled={saving}
@@ -720,12 +831,53 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
               );
             })}
           </div>
+
+          <div style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              className="cv-btn cv-btn--ghost cv-btn--sm"
+              style={{ fontSize: 12, padding: '2px 8px' }}
+              onClick={() => setShowMilestones((v) => !v)}
+            >
+              {showMilestones ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              {showMilestones ? 'Hide call milestones' : 'More call milestones (1st call, 2nd call, 3rd call)…'}
+            </button>
+            {showMilestones && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                {CALL_MILESTONES.map((k) => {
+                  const m = statusMeta(k);
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      className={`cv-pill cv-pill--${m.tone}`}
+                      style={{
+                        cursor: 'pointer',
+                        border: 'none',
+                        fontSize: 12,
+                        padding: '4px 9px',
+                        opacity: saving ? 0.6 : 1,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                      }}
+                      disabled={saving}
+                      onClick={() => setStatus(k)}
+                    >
+                      <span className="cv-pill-dot" />
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <Field label="Note for this call (optional)">
           <Input
             value={note}
-            placeholder="e.g. Asked to call back tomorrow morning"
+            placeholder="e.g. Explained dashboard features. Ready to pay UPI for 4 booths tomorrow morning."
             onChange={(e) => setNote(e.target.value)}
           />
         </Field>
@@ -743,8 +895,8 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
           </Field>
         )}
 
-        <Field label="Notes / comments on this candidate">
-          <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <Field label="General Notes / Comments on candidate">
+          <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           <div style={{ marginTop: 6 }}>
             <Button size="sm" icon={StickyNote} onClick={saveNotes} disabled={saving}>
               Save notes
@@ -752,67 +904,73 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
           </div>
         </Field>
 
+        {/* Multi-Call Timeline Audit */}
         <div>
-          <div className="cv-field-label" style={{ marginBottom: 6 }}>
-            <Phone size={13} /> Call history
+          <div className="cv-field-label" style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Phone size={13} /> Call History & Audio Audits ({callLog.length} call{callLog.length !== 1 ? 's' : ''})
           </div>
           {callLog.length === 0 ? (
-            <p className="cv-muted" style={{ fontSize: 13 }}>
-              No calls logged yet.
+            <p className="cv-muted" style={{ fontSize: 13, background: 'var(--cv-subtle, #f8fafc)', padding: 12, borderRadius: 8 }}>
+              No calls logged yet. Click “Call (web)” above to dial this candidate.
             </p>
           ) : (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 10 }}>
-              {callLog.map((h, i) => (
-                <li
-                  key={i}
-                  style={{
-                    border: '1px solid var(--cv-line, #e5e7eb)',
-                    borderRadius: 8,
-                    padding: '8px 10px',
-                    background: 'var(--cv-subtle, #f8fafc)',
-                  }}
-                >
-                  <div
+              {callLog.map((h, i) => {
+                const callNumber = callLog.length - i;
+                const sm = statusMeta(h.status);
+                return (
+                  <li
+                    key={i}
                     style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      gap: 8,
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
+                      border: '1px solid var(--cv-line, #e2e8f0)',
+                      borderRadius: 8,
+                      padding: '10px 12px',
+                      background: '#ffffff',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                     }}
                   >
-                    <span style={{ fontSize: 13 }}>
-                      {h.direction === 'inbound' ? 'Incoming' : 'Outgoing'}
-                      {h.duration ? ` · ${h.duration}s` : ''}
-                      <span className="cv-muted">
-                        {' '}
-                        · {statusMeta(h.status).label}
-                        {h.by && h.by !== 'System' ? ` · ${h.by}` : ''}
-                      </span>
-                    </span>
-                    <span className="cv-muted cv-mono-sm" style={{ fontSize: 12 }}>
-                      {fmtDateTime(h.at)}
-                    </span>
-                  </div>
-                  {h.recording && (
-                    <audio
-                      controls
-                      preload="none"
-                      style={{ width: '100%', marginTop: 6, height: 34 }}
-                      src={`/api/crm/recordings?file=${encodeURIComponent(h.recording)}`}
-                    >
-                      Your browser can’t play this recording.
-                    </audio>
-                  )}
-                </li>
-              ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontWeight: 600, fontSize: 12.5, background: 'var(--cv-subtle, #f1f5f9)', padding: '2px 8px', borderRadius: 4 }}>
+                          Call #{callNumber}
+                        </span>
+                        <span style={{ fontSize: 12.5, color: '#334155' }}>
+                          {h.direction === 'inbound' ? 'Inbound IVR' : 'Outbound Softphone'}
+                          {h.duration ? ` · ${h.duration}s talk time` : ''}
+                        </span>
+                        <Pill tone={sm.tone} dot>{sm.label}</Pill>
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--cv-muted, #64748b)' }}>
+                        {fmtDateTime(h.at)}
+                      </div>
+                    </div>
+                    {(h.note || h.by) && (
+                      <div style={{ marginTop: 6, fontSize: 12.5, color: '#475569', display: 'flex', gap: 6 }}>
+                        {h.by && h.by !== 'System' && <span style={{ fontWeight: 500 }}>{h.by}:</span>}
+                        {h.note && <span>"{h.note}"</span>}
+                      </div>
+                    )}
+                    {h.recording && (
+                      <audio
+                        controls
+                        preload="none"
+                        style={{ width: '100%', marginTop: 8, height: 32 }}
+                        src={`/api/crm/recordings?file=${encodeURIComponent(h.recording)}`}
+                      >
+                        Your browser can’t play this recording.
+                      </audio>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
 
+        {/* Status History */}
         <div>
           <div className="cv-field-label" style={{ marginBottom: 6 }}>
-            <Clock size={13} /> Status history
+            <Clock size={13} /> Full Status Timeline
           </div>
           {history.length === 0 ? (
             <p className="cv-muted" style={{ fontSize: 13 }}>
@@ -833,8 +991,8 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
                       paddingLeft: 10,
                     }}
                   >
-                    <Pill tone={m.tone}>
-                      {m.emoji} {m.label}
+                    <Pill tone={m.tone} dot>
+                      {m.label}
                     </Pill>
                     <span className="cv-muted" style={{ fontSize: 12 }}>
                       <span className="cv-mono-sm">{fmtDateTime(h.at)}</span>

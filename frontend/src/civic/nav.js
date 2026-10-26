@@ -52,12 +52,11 @@ export const ADMIN_NAV = [
   {
     section: 'Telecalling',
     items: [
+      { to: '/team/dashboard', label: 'Call Center Dashboard', icon: LayoutGrid },
+      { to: '/team/crm', label: 'Telecalling Workspace', icon: PhoneCall },
       { to: '/team/members', label: 'Team Members', icon: Headphones },
-      { to: '/team/inbox', label: 'Shared Inbox', icon: Inbox },
-      { to: '/team/crm', label: 'CRM Leads', icon: MessageSquare },
       { to: '/team/assignment', label: 'Lead Assignment', icon: Shuffle },
-      { to: '/team/view', label: 'Telecaller View', icon: Eye },
-      { to: '/team/reports', label: 'Lead Reports', icon: LineChart },
+      { to: '/team/reports', label: 'Lead & Call Reports', icon: LineChart },
     ],
   },
   {
@@ -157,25 +156,24 @@ export const MLA_NAV = [
 // lists (read-only) and their reports. Everything is scoped to the logged-in agent.
 export const TELECALLER_NAV = [
   {
-    section: 'My work',
+    section: 'My calling work',
     items: [
-      { to: '/team/dashboard', label: 'Dashboard', icon: LayoutGrid },
-      { to: '/team/inbox', label: 'Inbox', icon: Inbox },
-      { to: '/team/crm', label: 'My Leads / Chats', icon: MessageSquare },
+      { to: '/team/dashboard', label: 'My Dashboard', icon: LayoutGrid },
+      { to: '/team/crm', label: 'Telecalling Workspace', icon: PhoneCall },
     ],
   },
   {
-    section: 'Follow-up',
+    section: 'Calling Queues',
     items: [
-      { to: '/team/incomplete', label: 'Incomplete regs', icon: UserPlus },
-      { to: '/team/registrations', label: 'Registrations', icon: ClipboardList },
-      { to: '/team/payments', label: 'Payments', icon: CreditCard },
+      { to: '/team/crm?queue=incomplete', label: 'Incomplete Regs', icon: UserPlus, match: (path, search) => path === '/team/crm' && search.includes('queue=incomplete') },
+      { to: '/team/crm?queue=registered', label: 'Registered Leads', icon: ClipboardList, match: (path, search) => path === '/team/crm' && search.includes('queue=registered') },
+      { to: '/team/crm?scope=paid', label: 'Payment Follow-up', icon: CreditCard, match: (path, search) => path === '/team/crm' && search.includes('scope=paid') },
     ],
   },
   {
     section: 'Reports',
     items: [
-      { to: '/team/reports', label: 'My Reports', icon: LineChart },
+      { to: '/team/reports', label: 'My Call Reports', icon: LineChart },
     ],
   },
 ];

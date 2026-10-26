@@ -8,8 +8,8 @@ const ID = 'crm_config';
 export const DEFAULT_CONFIG = {
   round_robin: true,       // auto round-robin on inbound + the Distribute button
   manual_assign: true,     // admin can assign leads manually
-  claim_unassigned: false, // telecallers may claim unassigned leads themselves
-  auto_distribute: { enabled: false, frequency: 'daily', hour: 9 }, // scheduled redistribution
+  claim_unassigned: true,  // telecallers may claim unassigned leads themselves
+  auto_distribute: { enabled: true, frequency: '10min', hour: 9 }, // scheduled auto-distribution
 };
 
 export async function loadCrmConfig(db) {
@@ -33,7 +33,7 @@ export async function saveCrmConfig(db, patch = {}, by = null) {
     const a = patch.auto_distribute;
     $set.auto_distribute = {
       enabled: !!a.enabled,
-      frequency: ['hourly', 'daily', 'weekly'].includes(a.frequency) ? a.frequency : 'daily',
+      frequency: ['10min', 'hourly', 'daily', 'weekly'].includes(a.frequency) ? a.frequency : '10min',
       hour: Math.max(0, Math.min(23, Number(a.hour) || 9)),
     };
   }

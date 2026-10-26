@@ -135,12 +135,12 @@ export default function App() {
         <Route path="team/assignment" element={<RequireRole allowedGroups={[1]}><Assignment /></RequireRole>} />
         <Route path="team/view" element={<RequireRole allowedGroups={[1]}><TelecallerDashboard adminView /></RequireRole>} />
         <Route path="team/dashboard" element={<RequireRole allowedGroups={[1, 7, 12]}><TelecallerDashboard /></RequireRole>} />
-        <Route path="team/inbox" element={<RequireRole allowedGroups={[1, 7, 12]}><Inbox /></RequireRole>} />
+        <Route path="team/inbox" element={<Navigate to="/team/crm" replace />} />
         <Route path="team/crm" element={<RequireRole allowedGroups={[1, 7, 12]}><CrmLeads /></RequireRole>} />
         <Route path="team/reports" element={<RequireRole allowedGroups={[1, 7, 12]}><LeadReports /></RequireRole>} />
-        <Route path="team/incomplete" element={<RequireRole allowedGroups={[1, 7, 12]}><Leads isTeam /></RequireRole>} />
-        <Route path="team/registrations" element={<RequireRole allowedGroups={[1, 7, 12]}><Registrations isTeam /></RequireRole>} />
-        <Route path="team/payments" element={<RequireRole allowedGroups={[1, 7, 12]}><Payments isTeam /></RequireRole>} />
+        <Route path="team/incomplete" element={<Navigate to="/team/crm?queue=incomplete" replace />} />
+        <Route path="team/registrations" element={<Navigate to="/team/crm?queue=registered" replace />} />
+        <Route path="team/payments" element={<Navigate to="/team/crm?scope=paid" replace />} />
         <Route path="team/*" element={<Navigate to="/team/dashboard" replace />} />
         <Route path="flow-images" element={<RequireRole allowedGroups={[1]}><BotContent /></RequireRole>} />
         <Route path="flow-simulator" element={<RequireRole allowedGroups={[1]}><FlowSimulator /></RequireRole>} />

@@ -36,11 +36,26 @@ export const LEAD_STATUS = {
   none:                     { label: 'New',             tone: 'neutral', icon: Circle,          emoji: '', bucket: 'new' },
 };
 
-// The outcome buttons a telecaller taps on a call (order shown in the drawer).
+// The primary fast-tap outcome buttons for a telecaller.
+export const PRIMARY_OUTCOMES = [
+  'interested',
+  'call_back',
+  'not_answered',
+  'switch_off',
+  'converted',
+  'not_interested',
+];
+
+export const CALL_MILESTONES = [
+  'first_call_complete',
+  'second_call_complete',
+  'third_call_complete',
+  'registration_completed',
+];
+
 export const STATUS_BUTTONS = [
-  'contacted', 'interested', 'call_back', 'not_answered', 'switch_off',
-  'first_call_complete', 'second_call_complete', 'third_call_complete',
-  'registration_incomplete', 'registration_completed', 'converted', 'not_interested',
+  ...PRIMARY_OUTCOMES,
+  ...CALL_MILESTONES,
 ];
 
 export const statusMeta = (k) => LEAD_STATUS[k] || LEAD_STATUS.none;
