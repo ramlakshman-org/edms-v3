@@ -4,6 +4,7 @@ import { findById, updateUser } from '../models/userModel.js';
 import { isPaid, paidFlag, PAID_VALUES } from '../utils/paid.js';
 import { getPaymentSettings, savePaymentSettings, priceFor } from '../services/paymentSettings.js';
 import { recordProof, storeScreenshot, PROOF_COLL, proofApprovedMessage, proofRejectedMessage } from '../services/paymentProof.js';
+import { markCrmLeadStatus } from '../services/leads.js';
 import { loadBotContent } from '../services/botContent.js';
 import { sendWactoText, wactoConfigured } from '../services/wactoService.js';
 import * as cloudinary from '../services/cloudinaryService.js';
@@ -455,6 +456,7 @@ export async function razorpayWebhook(req, res) {
           { _id: userRec._id },
           { $set: { paid_status: 'Yes', transaction_id: payment_id } }
         );
+        await markCrmLeadStatus(db, mobile_str, 'converted', 'Payment received (webhook)'); // sync CRM pipeline
         // Save payment doc if not already saved
         const exists = await db.collection('tbl_payment').findOne({ payment_id });
         if (!exists) {
@@ -736,6 +738,7 @@ export async function approveUtr(req, res) {
     const txnId = utrDoc.utr || `QR-${now.slice(0, 10).replace(/-/g, '')}-${String(utrDoc._id).slice(-6).toUpperCase()}`;
 
     if (userRec?._id) await updateUser(String(userRec._id), { paid_status: 'Yes', transaction_id: txnId });
+    await markCrmLeadStatus(db, utrDoc.mobile_no, 'converted', 'Payment approved'); // sync CRM pipeline
 
     await db.collection('tbl_payment').insertOne({
       payment_id: txnId,

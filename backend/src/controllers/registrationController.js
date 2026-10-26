@@ -1,6 +1,12 @@
 import { getAppDb } from '../config/db.js';
 import { calculateWardPricing } from './paymentController.js';
+import { ROLES } from '../constants/roles.js';
 import { isPaid, paidFlag, PAID_VALUES } from '../utils/paid.js';
+
+// Candidate login passcodes are only shown to the Super Admin. Telecallers/CRM
+// agents (who can read this list for follow-up) get a masked value.
+const PASSCODE_MASK = '••••••';
+const isAdminReq = (req) => Number(req.user?.group_id) === ROLES.SUPER_ADMIN;
 import { markLeadUnregistered } from '../services/leads.js';
 import { forgetPaymentClock } from '../services/reminders.js';
 import { toObjectId } from '../utils/objectId.js';
@@ -86,48 +92,93 @@ export async function list(req, res) {
 
     const mobiles = docs.map((d) => clean(d.mobile)).filter(Boolean);
 
-    // Passcode & payment status fallback: look up user logins by mobile in one query.
+    // Passcode, source & payment status fallback: look up user logins by mobile in one query.
     const users = mobiles.length
       ? await db.collection('tbl_user').find(
           { mobile_no: { $in: docs.map((d) => d.mobile).filter(Boolean) } },
-          { projection: { mobile_no: 1, password_str: 1, paid_status: 1, transaction_id: 1, assembly_id: 1, assembly_name: 1, booths: 1 } },
+          { projection: { mobile_no: 1, password_str: 1, paid_status: 1, transaction_id: 1, assembly_id: 1, assembly_name: 1, booths: 1, source: 1, registered_via: 1 } },
         ).toArray()
       : [];
     const userByMobile = {};
     for (const u of users) userByMobile[clean(u.mobile_no)] = u;
 
+    // Check tbl_leads to see original source: 'whatsapp' vs 'website'
+    const leads = mobiles.length
+      ? await db.collection('tbl_leads').find(
+          { mobile: { $in: mobiles } },
+          { projection: { mobile: 1, sources: 1, source: 1 } }
+        ).toArray()
+      : [];
+    const leadByMobile = {};
+    for (const l of leads) leadByMobile[clean(l.mobile)] = l;
+
+    // Check tbl_crm_conversation to see if candidate has a WhatsApp conversation thread
+    const crmThreads = mobiles.length
+      ? await db.collection('tbl_crm_conversation').find(
+          { clean_mobile: { $in: mobiles } },
+          { projection: { clean_mobile: 1, source: 1 } }
+        ).toArray()
+      : [];
+    const crmByMobile = {};
+    for (const c of crmThreads) crmByMobile[clean(c.clean_mobile)] = c;
+
     const reqByMobile = await socialRequestsFor(db, mobiles);
 
+    const mappedRows = docs.map((r) => {
+      const cm = clean(r.mobile);
+      const uRec = userByMobile[cm];
+      const lRec = leadByMobile[cm];
+      const cRec = crmByMobile[cm];
+
+      let source = r.source || r.registered_via || uRec?.source || uRec?.registered_via;
+      if (!source) {
+        if (lRec?.sources?.includes('whatsapp') && lRec?.sources?.includes('website')) {
+          source = 'whatsapp + website';
+        } else if (lRec?.sources?.includes('whatsapp') || cRec) {
+          source = 'whatsapp';
+        } else {
+          source = 'website';
+        }
+      }
+
+      const rawBooths = Array.isArray(r.booths) && r.booths.length > 0 ? r.booths : (Array.isArray(r.selected_booths) && r.selected_booths.length > 0 ? r.selected_booths : (Array.isArray(uRec?.booths) ? uRec.booths : []));
+      const assId = r.assembly_id || r.assembly_no || uRec?.assembly_id || null;
+      const assName = r.assembly_name || r.assembly || uRec?.assembly_name || null;
+      return {
+        _id: r._id,
+        id: r.id ?? null,
+        full_name: r.full_name || r.firstname || 'No Name',
+        mobile: r.mobile || '-',
+        source: source,
+        district: r.district || '-',
+        position: r.position || '-',
+        body_type: r.body_type || '-',
+        local_body: r.union_or_municipality || r.panchayat_or_corporation || '-',
+        ward_number: r.ward_number || '-',
+        assembly_id: assId,
+        assembly_name: assName,
+        booths: rawBooths,
+        booth_count: rawBooths.length || r.booth_count || 0,
+        passcode: isAdminReq(req) ? (r.passcode || uRec?.password_str || '-') : PASSCODE_MASK,
+        paid_status: paidFlag(uRec?.paid_status),
+        transaction_id: uRec?.transaction_id || null,
+        created_at: r.created_at || '-',
+        // just the service types for the compact icon column
+        requests: (reqByMobile[cm] || []).map((x) => x.service_type),
+      };
+    });
+
+    const srcFilter = req.query.source ? String(req.query.source).toLowerCase() : '';
+    const filteredRows = srcFilter
+      ? mappedRows.filter((r) => String(r.source || '').toLowerCase().includes(srcFilter))
+      : mappedRows;
+
     res.json({
-      success: true, total, page, pageSize,
-      rows: docs.map((r) => {
-        const cm = clean(r.mobile);
-        const uRec = userByMobile[cm];
-        const rawBooths = Array.isArray(r.booths) && r.booths.length > 0 ? r.booths : (Array.isArray(r.selected_booths) && r.selected_booths.length > 0 ? r.selected_booths : (Array.isArray(uRec?.booths) ? uRec.booths : []));
-        const assId = r.assembly_id || r.assembly_no || uRec?.assembly_id || null;
-        const assName = r.assembly_name || r.assembly || uRec?.assembly_name || null;
-        return {
-          _id: r._id,
-          id: r.id ?? null,
-          full_name: r.full_name || r.firstname || 'No Name',
-          mobile: r.mobile || '-',
-          district: r.district || '-',
-          position: r.position || '-',
-          body_type: r.body_type || '-',
-          local_body: r.union_or_municipality || r.panchayat_or_corporation || '-',
-          ward_number: r.ward_number || '-',
-          assembly_id: assId,
-          assembly_name: assName,
-          booths: rawBooths,
-          booth_count: rawBooths.length || r.booth_count || 0,
-          passcode: r.passcode || uRec?.password_str || '-',
-          paid_status: paidFlag(uRec?.paid_status),
-          transaction_id: uRec?.transaction_id || null,
-          created_at: r.created_at || '-',
-          // just the service types for the compact icon column
-          requests: (reqByMobile[cm] || []).map((x) => x.service_type),
-        };
-      }),
+      success: true,
+      total: srcFilter ? filteredRows.length : total,
+      page,
+      pageSize,
+      rows: filteredRows,
     });
   } catch (e) {
     if (e.message === 'APP_DB_OFFLINE') return res.status(503).json({ success: false, message: 'App database unavailable.' });
@@ -194,7 +245,7 @@ export async function detail(req, res) {
       success: true,
       registration: {
         ...reg,
-        passcode,
+        passcode: isAdminReq(req) ? passcode : (passcode ? PASSCODE_MASK : passcode),
         paid_status: paidFlag(userRec?.paid_status),
         transaction_id: userRec?.transaction_id || paymentDoc?.payment_id || null,
         payment: paymentDoc ? {

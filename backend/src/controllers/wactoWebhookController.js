@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { getAppDb } from '../config/db.js';
+import { genPasscode } from '../utils/passcode.js';
 import { isPaid, paidFlag, PAID_VALUES } from '../utils/paid.js';
 import { sendWactoText, sendWactoImage, sendWactoImageWithCaption } from '../services/wactoService.js';
 import { getPaymentSettings } from '../services/paymentSettings.js';
@@ -11,7 +12,7 @@ import {
 
 import { blankUser, maxUserId } from '../models/userModel.js';
 import { ROLES } from '../constants/roles.js';
-import { touchLead, markLeadRegistered, stepOfSession } from '../services/leads.js';
+import { touchLead, markLeadRegistered, stepOfSession, markCrmLeadStatus } from '../services/leads.js';
 import { DISTRICT_ASSEMBLIES } from '../constants/wactoAssemblies.js';
 import { getFeatureSettings, isOnFor } from '../services/features.js';
 import { onRegistered, optOut, payLater } from '../services/reminders.js';
@@ -406,7 +407,7 @@ async function handleMenuSelection(phone, selected, db, coll, session) {
 async function completeRegistration(phone, session, contactName) {
   const mobile  = toMobile10(phone);
   const fullName = contactName || session.contact_name || mobile;
-  const passcode = String(Math.floor(100000 + Math.random() * 900000));
+  const passcode = genPasscode();
   const db = getAppDb();
 
   try {
@@ -476,6 +477,7 @@ async function completeRegistration(phone, session, contactName) {
     }
 
     await markLeadRegistered(db, mobile);
+    await markCrmLeadStatus(db, mobile, 'registration_completed', 'WhatsApp registration completed');
     await onRegistered(db, { mobile, name: fullName, lang: session.lang, booth_count: session.booth_count, source: 'whatsapp' }); // payment-reminder clock (sends only when switched on)
     await sendImageWithText(phone, botImage('registration_complete'), botText('reg_complete', session?.lang, { name: fullName, mobile, passcode }));
 
@@ -730,6 +732,16 @@ async function handleIncomingProof(phone, msg_, contactName) {
 
 export async function handleWactoWebhook(req, res) {
   res.sendStatus(200); // Acknowledge immediately
+
+  // Webhook authentication: when WACTO_WEBHOOK_SECRET is set, only process requests
+  // carrying the matching token (configure ?token=<secret> in the WACTO webhook URL,
+  // or send an x-webhook-token header). Without this, anyone who finds the URL can
+  // drive registration/account creation and trigger paid outbound sends. Set it in prod.
+  const whSecret = process.env.WACTO_WEBHOOK_SECRET;
+  if (whSecret) {
+    const got = req.query?.token || req.headers['x-webhook-token'] || '';
+    if (String(got) !== String(whSecret)) { console.warn('[wacto] webhook rejected: bad/missing token'); return; }
+  }
 
   try {
     const change = req.body?.entry?.[0]?.changes?.[0]?.value;

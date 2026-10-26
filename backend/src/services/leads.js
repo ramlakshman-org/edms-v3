@@ -96,6 +96,26 @@ export async function markLeadRegistered(db, mobile) {
   }
 }
 
+// Reflect a real registration/payment outcome onto the telecaller CRM pipeline so
+// the CRM "registered"/"converted" metrics match reality (lead_status was otherwise
+// moved only by an agent clicking). Updates the conversation if one exists — it does
+// not create a conversation here (that is handled by the CRM assignment flow).
+export async function markCrmLeadStatus(db, mobile, status, note = '') {
+  try {
+    const m = ten(mobile);
+    if (!m) return;
+    await db.collection('tbl_crm_conversation').updateOne(
+      { clean_mobile: m },
+      {
+        $set: { lead_status: status, updated_at: new Date() },
+        $push: { status_history: { status, note, by: 'System', at: new Date(), source: 'auto' } },
+      },
+    );
+  } catch (e) {
+    console.warn(`[leads] crm status sync failed for ******${ten(mobile).slice(-4)}: ${e.message}`);
+  }
+}
+
 // The admin deleted this number's account: it is incomplete again, so it goes back to the follow-up list (2026-10-17).
 export async function markLeadUnregistered(db, mobile) {
   try {

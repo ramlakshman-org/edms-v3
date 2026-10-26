@@ -47,7 +47,7 @@ function checksFor(row, all) {
 
 const sourcePill = (r) => (r.source === 'whatsapp' ? <Pill tone="ok">WhatsApp</Pill> : r.source === 'website' ? <Pill tone="info">Website</Pill> : <Pill tone="neutral">UTR form</Pill>);
 
-export default function Payments() {
+export default function Payments({ isTeam = false }) {
   // the tab lives in the URL so the Dashboard can link straight to /payments?tab=paid
   const [params, setParams] = useSearchParams();
   const tab = TABS.some((t) => t.id === params.get('tab')) ? params.get('tab') : 'pending';
@@ -172,9 +172,10 @@ export default function Payments() {
   return (
     <div className="cv-page">
       <PageHeader
+        eyebrow={isTeam ? 'Follow-up' : undefined}
         title="Payments"
         subtitle="Verify UPI QR payment proofs and see the payments received"
-        actions={<><Link className="cv-btn cv-btn--ghost" to="/payments/setup"><QrCode size={15} /> Payment setup</Link><Button variant="ghost" icon={RefreshCw} onClick={load} disabled={loading}>Refresh</Button></>}
+        actions={<>{!isTeam && <Link className="cv-btn cv-btn--ghost" to="/payments/setup"><QrCode size={15} /> Payment setup</Link>}<Button variant="ghost" icon={RefreshCw} onClick={load} disabled={loading}>Refresh</Button></>}
       />
 
       {err && <Alert tone="bad"><CircleAlert size={16} /> {err}</Alert>}

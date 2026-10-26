@@ -124,11 +124,11 @@ export default function App() {
         <Route path="ward-logins/create" element={<RequireRole allowedGroups={[1]}><CreateWardLogin /></RequireRole>} />
         <Route path="ward-logins/:id" element={<RequireRole allowedGroups={[1]}><WardDetail /></RequireRole>} />
         <Route path="ward-logins/:id/edit" element={<RequireRole allowedGroups={[1]}><EditWardBooths /></RequireRole>} />
-        <Route path="registrations" element={<RequireRole allowedGroups={[1]}><Registrations /></RequireRole>} />
-        <Route path="incomplete-registrations" element={<RequireRole allowedGroups={[1]}><Leads /></RequireRole>} />
-        <Route path="registrations/view/:id" element={<RequireRole allowedGroups={[1]}><RegistrationDetail /></RequireRole>} />
-        <Route path="registrations/edit/:id" element={<RequireRole allowedGroups={[1]}><RegistrationEdit /></RequireRole>} />
-        <Route path="payments" element={<RequireRole allowedGroups={[1]}><Payments /></RequireRole>} />
+        <Route path="registrations" element={<RequireRole allowedGroups={[1, 7, 12]}><Registrations /></RequireRole>} />
+        <Route path="incomplete-registrations" element={<RequireRole allowedGroups={[1, 7, 12]}><Leads /></RequireRole>} />
+        <Route path="registrations/view/:id" element={<RequireRole allowedGroups={[1, 7, 12]}><RegistrationDetail /></RequireRole>} />
+        <Route path="registrations/edit/:id" element={<RequireRole allowedGroups={[1, 7, 12]}><RegistrationEdit /></RequireRole>} />
+        <Route path="payments" element={<RequireRole allowedGroups={[1, 7, 12]}><Payments /></RequireRole>} />
         <Route path="payments/setup" element={<RequireRole allowedGroups={[1]}><PaymentSettings /></RequireRole>} />
         {/* Telecalling / CRM (restored 2026-10-24) — Super Admin manages the team; telecallers (12/7) get their workspace */}
         <Route path="team/members" element={<RequireRole allowedGroups={[1]}><TeamMembers /></RequireRole>} />
@@ -138,9 +138,9 @@ export default function App() {
         <Route path="team/inbox" element={<RequireRole allowedGroups={[1, 7, 12]}><Inbox /></RequireRole>} />
         <Route path="team/crm" element={<RequireRole allowedGroups={[1, 7, 12]}><CrmLeads /></RequireRole>} />
         <Route path="team/reports" element={<RequireRole allowedGroups={[1, 7, 12]}><LeadReports /></RequireRole>} />
-        <Route path="team/incomplete" element={<RequireRole allowedGroups={[1, 7, 12]}><CrmLeads scope="unregistered" title="Incomplete registrations" subtitle="Your assigned leads who haven’t registered yet — call back and convert." /></RequireRole>} />
-        <Route path="team/registrations" element={<RequireRole allowedGroups={[1, 7, 12]}><CrmLeads scope="registered" title="Registrations" subtitle="Your assigned leads who have registered." /></RequireRole>} />
-        <Route path="team/payments" element={<RequireRole allowedGroups={[1, 7, 12]}><CrmLeads scope="paid" title="Payments" subtitle="Your assigned leads who are Active Pro (paid)." /></RequireRole>} />
+        <Route path="team/incomplete" element={<RequireRole allowedGroups={[1, 7, 12]}><Leads isTeam /></RequireRole>} />
+        <Route path="team/registrations" element={<RequireRole allowedGroups={[1, 7, 12]}><Registrations isTeam /></RequireRole>} />
+        <Route path="team/payments" element={<RequireRole allowedGroups={[1, 7, 12]}><Payments isTeam /></RequireRole>} />
         <Route path="team/*" element={<Navigate to="/team/dashboard" replace />} />
         <Route path="flow-images" element={<RequireRole allowedGroups={[1]}><BotContent /></RequireRole>} />
         <Route path="flow-simulator" element={<RequireRole allowedGroups={[1]}><FlowSimulator /></RequireRole>} />

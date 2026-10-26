@@ -87,7 +87,7 @@ r.post('/auth/logout', auth.logout);
 // logins (candidates, booth, ward) are rejected. Agents are further scoped to their own assigned
 // conversations inside each controller (agentCanAccess / isCrmAgent); admins may pass ?agent_id= to
 // view one telecaller's inbox/stats/report without logging in as them.
-const crmAccess = requireRole(ROLES.CRM_AGENT);
+const crmAccess = requireRole(ROLES.CRM_AGENT, ROLES.TELECALLER);
 
 // Team members (Super Admin)
 r.get('/team/members', adminOnly, team.listTeamMembers);
@@ -118,7 +118,7 @@ r.get('/crm/settings', crmAccess, crm.getCrmSettings);        // telecallers rea
 r.put('/crm/settings', adminOnly, crm.updateCrmSettings);     // only admin changes
 r.post('/crm/conversations/:phone/claim', crmAccess, crm.claimLead);
 r.get('/crm/recordings', crmAccess, telecmi.getRecording); // stream a TeleCMI call recording
-r.post('/crm/sync-recordings', adminOnly, crm.syncTelecmiRecordings); // import real TeleCMI call logs + recordings
+r.post('/crm/sync-recordings', crmAccess, crm.syncTelecmiRecordings); // import real TeleCMI call logs + recordings (telecaller: own; admin: team)
 r.get('/crm/team-stats', crmAccess, crm.teamStats);
 r.get('/crm/team-report', crmAccess, crm.teamReport);
 
@@ -172,23 +172,23 @@ r.post('/ward-logins/:id/save-booths', adminOnly, wardLogins.saveBooths);
 r.post('/ward-logins/check-exists', adminOnly, wardLogins.checkExists);
 r.delete('/ward-logins/:id', adminOnly, wardLogins.remove);
 
-// Registrations (Super Admin only — candidate PII), Payments ledgers, Reports
-r.get('/registrations', adminOnly, registrations.list);
-r.get('/registrations/:id', adminOnly, registrations.detail);
+// Registrations (Super Admin + Telecalling), Payments ledgers, Reports
+r.get('/registrations', crmAccess, registrations.list);
+r.get('/registrations/:id', crmAccess, registrations.detail);
 // Added on the server 2026-10-07 (live ahead of git): booth assignment, paid flag, delete.
 r.put('/registrations/:id/assign-booths', adminOnly, registrations.assignBooths);
 r.put('/registrations/:id/set-paid', adminOnly, registrations.setPaid);
 r.put('/registrations/:id', adminOnly, registrations.update);
 r.delete('/registrations/:id', adminOnly, registrations.remove);
-r.get('/leads', adminOnly, leads.list);
-r.put('/leads/:id', adminOnly, leads.update);
+r.get('/leads', crmAccess, leads.list);
+r.put('/leads/:id', crmAccess, leads.update);
 // WhatsApp features: on/off switches, test numbers, template names, reminder plan + log (Super Admin)
 r.get('/whatsapp-features', adminOnly, features.get);
 r.put('/whatsapp-features', adminOnly, features.update);
 // (wrapped so Express's `next` is never taken for the injectable sender)
 r.post('/whatsapp-features/test-send', adminOnly, (req, res) => features.testSend(req, res));
 r.get('/whatsapp-features/templates', adminOnly, (req, res) => features.templates(req, res));
-r.get('/payments/subscriptions', adminOnly, payments.subscriptions);
+r.get('/payments/subscriptions', crmAccess, payments.subscriptions);
 r.get('/payments/ledger', adminOnly, payments.payments);
 r.get('/payments/ward-pricing', payments.getWardPricingApi);
 r.post('/payments/order', payments.createOrder);
@@ -197,14 +197,18 @@ r.post('/payments/verify-ward-payment', payments.verifyWardPayment);
 r.get('/payments/check-paid', payments.checkPaid);
 r.post('/payments/check-order-status', payments.checkOrderStatus);
 r.post('/payments/submit-utr', payments.submitUtr);
-r.get('/payments/pending-utrs', adminOnly, payments.pendingUtrs);
+r.get('/payments/pending-utrs', crmAccess, payments.pendingUtrs);
 r.post('/payments/approve-utr', adminOnly, payments.approveUtr);
 r.get('/payments/settings', payments.getSettings);
 r.put('/payments/settings', adminOnly, payments.updateSettings);
-r.get('/reports/booth', reports.boothReport);
-r.get('/reports/documents', reports.documents);
-r.get('/reports/booth-report-list', reports.boothReportList);
-r.get('/reports/assembly-analytics', reports.assemblyAnalyticsReport);
+// Reports pages are for Super Admin + MLA/assembly + candidates (groups 1,3,6,11);
+// previously these had no role gate, so any logged-in user (incl. telecallers) could
+// pull booth/analytics report data directly.
+const reportAccess = requireRole(ROLES.MLA, ROLES.WARD, ROLES.BOOTH_ALT);
+r.get('/reports/booth', reportAccess, reports.boothReport);
+r.get('/reports/documents', reportAccess, reports.documents);
+r.get('/reports/booth-report-list', reportAccess, reports.boothReportList);
+r.get('/reports/assembly-analytics', reportAccess, reports.assemblyAnalyticsReport);
 
 // Phase 5 — Mobile-app CMS (generic CRUD over 13 content collections)
 r.get('/mobileapp/types', cms.types);

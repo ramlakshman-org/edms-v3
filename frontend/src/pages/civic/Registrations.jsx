@@ -9,13 +9,13 @@ import { SHOWS, showById, loadAllRegistrations, paidMobiles } from '../../civic/
 
 const POSITIONS = ['Corporation', 'Municipality', 'Town Panchayat', 'Village Panchayat Ward Member', 'Village Panchayat President', 'Panchayat Union Ward Member', 'District Panchayat Ward Member'];
 const PAGE_SIZE = 25;
-const EMPTY = { search: '', district: '', position: '', body_type: '', show: '' };
+const EMPTY = { search: '', district: '', position: '', body_type: '', show: '', source: '' };
 
 const paidTone = (s) => (s === 'Yes' ? 'ok' : s === 'No' ? 'neutral' : 'bad');
 const paidLabel = (s) => (s === 'Yes' ? 'Yes' : s === 'No' ? 'No' : `Invalid (${s})`);
 const reqIcon = (t) => (t === 'sms' ? <Mail size={13} /> : t === 'voice' ? <Mic size={13} /> : <MessageCircle size={13} />);
 
-export default function Registrations() {
+export default function Registrations({ isTeam = false }) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const page = Math.max(1, Number(params.get('page') || 1));
@@ -62,6 +62,19 @@ export default function Registrations() {
         <span className="cv-muted"><span className="cv-mono-sm">{r.mobile}</span>{r.created_at ? <> <span className="cv-nowrap">· {fmtDate(r.created_at)}</span></> : null}</span>
       </div>
     ) },
+    { key: 'source', label: 'Source', wrap: 100, render: (r) => {
+      const src = String(r.source || '').toLowerCase();
+      if (src.includes('whatsapp') && src.includes('website')) {
+        return (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            <Pill tone="ok">WhatsApp</Pill>
+            <Pill tone="info">Website</Pill>
+          </div>
+        );
+      }
+      if (src.includes('whatsapp')) return <Pill tone="ok">WhatsApp</Pill>;
+      return <Pill tone="info">Website</Pill>;
+    } },
     { key: 'position', label: 'Position', wrap: 120, render: (r) => <div className="cv-two"><span>{r.position || '—'}</span><span className="cv-muted">{r.body_type ? (String(r.body_type).toLowerCase() === 'urban' ? 'Urban' : 'Rural') : ''}{r.local_body && r.local_body !== '-' ? ` · ${r.local_body}` : ''}</span></div> },
     { key: 'district', label: 'District · Assembly', wrap: 120, mobile: false, render: (r) => <div className="cv-two"><span>{r.district || '—'}</span><span className="cv-muted">{r.assembly_name ? `${r.assembly_id ? `${r.assembly_id} · ` : ''}${r.assembly_name}` : ''}</span></div> },
     { key: 'booths', label: 'Booths', align: 'right', render: (r) => {
@@ -85,14 +98,15 @@ export default function Registrations() {
   // Export: a CSV of what the current filters show (Excel opens it); it was raw JSON before (UX5)
   const exportCsv = async () => {
     const { data: d } = await api.get('/registrations', { params: { ...filters, page: 1, pageSize: 500 } });
-    const rows = (d.rows || []).map((r) => ({ name: r.full_name || r.firstname || '', mobile: r.mobile || '', position: r.position || '', body_type: r.body_type || '', district: r.district || '', assembly: r.assembly_name ? `${r.assembly_id || ''} ${r.assembly_name}`.trim() : '', booths: r.booth_count || (Array.isArray(r.booths) ? r.booths.length : 0), paid: r.paid_status || '', registered: r.created_at || '' }));
-    download(`registrations${filters.show ? `-${filters.show}` : ''}.csv`, csvOf(rows, ['name', 'mobile', 'position', 'body_type', 'district', 'assembly', 'booths', 'paid', 'registered']));
+    const rows = (d.rows || []).map((r) => ({ name: r.full_name || r.firstname || '', mobile: r.mobile || '', source: r.source || 'website', position: r.position || '', body_type: r.body_type || '', district: r.district || '', assembly: r.assembly_name ? `${r.assembly_id || ''} ${r.assembly_name}`.trim() : '', booths: r.booth_count || (Array.isArray(r.booths) ? r.booths.length : 0), paid: r.paid_status || '', registered: r.created_at || '' }));
+    download(`registrations${filters.show ? `-${filters.show}` : ''}.csv`, csvOf(rows, ['name', 'mobile', 'source', 'position', 'body_type', 'district', 'assembly', 'booths', 'paid', 'registered']));
   };
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   return (
     <div className="cv-page">
       <PageHeader
+        eyebrow={isTeam ? 'Follow-up' : undefined}
         title="Registrations"
         subtitle={loading ? 'Loading…' : shown ? `${inr(data.total)} candidate${data.total === 1 ? '' : 's'} · ${shown.label.charAt(0).toLowerCase()}${shown.label.slice(1)}` : `${inr(data.total)} candidate${data.total === 1 ? '' : 's'} registered through WhatsApp or the website`}
         actions={<Button variant="ghost" icon={Download} onClick={exportCsv}>Export CSV</Button>}
@@ -110,6 +124,11 @@ export default function Registrations() {
           <Select value={draft.show} onChange={(e) => apply({ ...draft, show: e.target.value })} aria-label="Show">
             <option value="">All candidates</option>
             {SHOWS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </Select>
+          <Select value={draft.source} onChange={(e) => setDraft({ ...draft, source: e.target.value })} aria-label="Source">
+            <option value="">WhatsApp & website</option>
+            <option value="whatsapp">WhatsApp</option>
+            <option value="website">Website</option>
           </Select>
           <Select value={draft.district} onChange={(e) => setDraft({ ...draft, district: e.target.value })} aria-label="District">
             <option value="">All districts</option>

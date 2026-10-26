@@ -8,7 +8,7 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&family=Noto+Sans+Tamil:wght@400;500;600&display=swap');
 
-.cv-shell {
+:root, body, .cv-shell {
   --cv-canvas: #F4F5F7;
   --cv-surface: #FFFFFF;
   --cv-subtle: #F8FAFC;
@@ -35,7 +35,9 @@
   --cv-font: 'Inter', 'Noto Sans Tamil', -apple-system, 'Segoe UI', Roboto, sans-serif;
   --cv-mono: 'JetBrains Mono', Consolas, monospace;
   --cv-side-w: 248px;
+}
 
+.cv-shell {
   display: grid;
   grid-template-columns: var(--cv-side-w) minmax(0, 1fr);
   min-height: 100vh;

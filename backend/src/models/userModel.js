@@ -23,26 +23,38 @@ export async function findByCredentials(loginInput, password) {
     queryOr.push({ mobile_no: cleanMobile });
   }
 
-  const user = await db.collection(COLL).findOne({ $or: queryOr });
-  if (!user) return null;
+  // A login id (username / mobile / email) can match MORE THAN ONE account — e.g.
+  // a telecaller whose phone is also a registered candidate's number. Check every
+  // match and accept the first whose password is correct, so logging in by phone
+  // works even when the number collides with another account. Active accounts are
+  // tried first, so a live login wins over a stale duplicate.
+  const candidates = await db.collection(COLL)
+    .find({ $or: queryOr })
+    .sort({ is_active: -1, _id: 1 })
+    .toArray();
+  if (!candidates.length) return null;
 
   const pw = String(password ?? '');
 
-  // Preferred: bcrypt-hashed credential.
-  if (user.password && /^\$2[aby]\$/.test(String(user.password))) {
-    const ok = await bcrypt.compare(pw, String(user.password));
-    return ok ? user : null;
+  for (const user of candidates) {
+    // Preferred: bcrypt-hashed credential.
+    if (user.password && /^\$2[aby]\$/.test(String(user.password))) {
+      if (await bcrypt.compare(pw, String(user.password))) return user;
+      continue;
+    }
+
+    // Legacy plaintext (`password_str` may be a string or an integer). On a
+    // successful match, hash it into `password` so plaintext is phased out.
+    const stored = user.password_str;
+    if (stored == null || String(stored) !== pw) continue;
+    try {
+      const hash = await bcrypt.hash(pw, 10);
+      await db.collection(COLL).updateOne({ _id: user._id }, { $set: { password: hash } });
+    } catch { /* migration is best-effort; login still succeeds */ }
+    return user;
   }
 
-  // Legacy plaintext (`password_str` may be a string or an integer). On a
-  // successful match, hash it into `password` so plaintext is phased out.
-  const stored = user.password_str;
-  if (stored == null || String(stored) !== pw) return null;
-  try {
-    const hash = await bcrypt.hash(pw, 10);
-    await db.collection(COLL).updateOne({ _id: user._id }, { $set: { password: hash } });
-  } catch { /* migration is best-effort; login still succeeds */ }
-  return user;
+  return null;
 }
 
 export async function nextUserId() {

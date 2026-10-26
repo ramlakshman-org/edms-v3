@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getAppDb, getVoterDb } from '../config/db.js';
+import { genPasscode } from '../utils/passcode.js';
 import { sendText, sendFlowMessage, sendUrlButtonMessage, getMediaInfo, downloadMediaBytes } from '../services/whatsappService.js';
 import * as cloudinary from '../services/cloudinaryService.js';
 import { decryptRequest, encryptResponse, getFlowPrivateKey } from '../services/flowCryptoService.js';
@@ -475,7 +476,7 @@ async function handleGreeting(phone, textBody, profileName = null) {
   // Auto-bridge: if user exists in tbl_enquiry but not in tbl_user as login, auto-create user login!
   if (!user && enquiry) {
     console.log(`[WhatsApp Bot] Auto-creating login for enquiry record: ${cleanMobile}`);
-    const passcode = enquiry.passcode || String(Math.floor(100000 + Math.random() * 900000));
+    const passcode = enquiry.passcode || genPasscode();
     const fullName = enquiry.full_name || enquiry.firstname || 'Candidate';
     const district = enquiry.district || '-';
     const localBody = enquiry.panchayat_or_corporation || enquiry.union_or_municipality || '-';
@@ -638,7 +639,7 @@ async function handleFlowResponse(phone, payload) {
     booths = allParts.length ? allParts : ['All Booths'];
   }
 
-  const passcode = String(Math.floor(100000 + Math.random() * 900000));
+  const passcode = genPasscode();
   const nowStr = new Date().toISOString();
 
   // 1. Save or update record in tbl_enquiry

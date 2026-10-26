@@ -13,7 +13,7 @@ const TABS = [['open', 'To follow up'], ['interested', 'Interested'], ['not_inte
 const STATUS = { new: 'Not contacted', contacted: 'Contacted', interested: 'Interested', not_interested: 'Not interested' };
 const SOURCE = { whatsapp: 'WhatsApp', website: 'Website' };
 
-export default function Leads() {
+export default function Leads({ isTeam = false }) {
   const [params, setParams] = useSearchParams();
   const tab = TABS.some(([k]) => k === params.get('tab')) ? params.get('tab') : 'open';
   const page = Math.max(1, Number(params.get('page') || 1));
@@ -53,12 +53,27 @@ export default function Leads() {
   };
 
   const columns = [
-    { key: 'name', label: 'Person', primary: true, wrap: 150, render: (r) => (
+    { key: 'name', label: 'Person', primary: true, wrap: 140, render: (r) => (
       <div className="cv-two">
         <strong>{r.name || <span className="cv-muted">No name given</span>}</strong>
-        <span className="cv-muted"><span className="cv-mono-sm">{r.mobile}</span> · {(r.sources || []).map((s) => SOURCE[s] || s).join(' + ')}</span>
+        <span className="cv-muted"><span className="cv-mono-sm">{r.mobile}</span></span>
       </div>
     ) },
+    { key: 'source', label: 'Source', wrap: 100, render: (r) => {
+      const srcs = Array.isArray(r.sources) && r.sources.length ? r.sources : (r.source ? [r.source] : ['website']);
+      const hasWa = srcs.some((s) => String(s).toLowerCase().includes('whatsapp'));
+      const hasWeb = srcs.some((s) => String(s).toLowerCase().includes('web'));
+      if (hasWa && hasWeb) {
+        return (
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            <Pill tone="ok">WhatsApp</Pill>
+            <Pill tone="info">Website</Pill>
+          </div>
+        );
+      }
+      if (hasWa) return <Pill tone="ok">WhatsApp</Pill>;
+      return <Pill tone="info">Website</Pill>;
+    } },
     { key: 'step', label: 'How far they got', wrap: 150, render: (r) => (
       <div className="cv-two">
         <span>{r.step_label}</span>
@@ -100,6 +115,7 @@ export default function Leads() {
   return (
     <div className="cv-page">
       <PageHeader
+        eyebrow={isTeam ? 'Follow-up' : undefined}
         title="Incomplete registrations"
         subtitle={loading && !data.rows.length ? 'Loading…' : `${inr(c.open || 0)} ${c.open === 1 ? 'person' : 'people'} to follow up · messaged the WhatsApp bot or started the website form but did not finish`}
         actions={<Button variant="ghost" icon={Download} onClick={exportCsv}>Export CSV</Button>}

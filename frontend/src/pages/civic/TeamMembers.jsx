@@ -1,11 +1,48 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { UserPlus, Shuffle, Headphones, Pencil, Trash2, Power, Eye, Phone } from 'lucide-react';
+import {
+  UserPlus,
+  Shuffle,
+  Headphones,
+  Pencil,
+  Trash2,
+  Power,
+  Eye,
+  Phone,
+  PhoneCall,
+  PhoneOff,
+  ThumbsUp,
+  ThumbsDown,
+  Crown,
+  Users,
+} from 'lucide-react';
 import api from '../../api/client.js';
 import { PageHeader, Card, Kpi, Pill } from '../../civic/kit.jsx';
 import { DataTable, Button, Modal, Field, Input, Secret, RowMenu, loadError, fmtDateTime, waLink } from '../../civic/ui.jsx';
 
 const EMPTY = { name: '', username: '', mobile: '', password: '', telecmi_id: '', telecmi_password: '' };
+
+const initials = (name, mobile) => {
+  const s = String(name || '').replace(/\+?\d+/g, '').trim();
+  return s ? s.split(/\s+/).map((p) => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() : String(mobile || '?').slice(-2);
+};
+
+// Auto-generate a STRONG random 6-digit login passcode for a new telecaller:
+// cryptographically random (crypto.getRandomValues, not Math.random) and screened
+// so obvious patterns (111111, 123456, sequential runs) are never suggested.
+const WEAK6 = new Set(['000000', '111111', '222222', '333333', '444444', '555555', '666666', '777777', '888888', '999999', '123456', '654321', '121212', '123123', '112233', '102030']);
+const rand6 = () => {
+  if (window.crypto?.getRandomValues) return window.crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
+  return Math.floor(Math.random() * 1000000);
+};
+const gen6 = () => {
+  const asc = '0123456789', desc = '9876543210';
+  for (let i = 0; i < 48; i += 1) {
+    const code = String(rand6()).padStart(6, '0');
+    if (!WEAK6.has(code) && !/^(\d)\1{5}$/.test(code) && !asc.includes(code) && !desc.includes(code)) return code;
+  }
+  return String(rand6()).padStart(6, '0');
+};
 
 // Super-Admin: manage the telecalling team — create login credentials, activate/deactivate,
 // see each telecaller's live lead stats, and share unassigned WhatsApp leads round-robin.
@@ -29,7 +66,7 @@ export default function TeamMembers() {
   };
   useEffect(load, []);
 
-  const openCreate = () => { setEditId(null); setForm({ ...EMPTY }); };
+  const openCreate = () => { setEditId(null); setForm({ ...EMPTY, password: gen6() }); };
   const openEdit = (m) => { setEditId(m.id); setForm({ name: m.name, username: m.username, mobile: m.mobile, password: '', telecmi_id: m.telecmi_id || '', telecmi_password: '' }); };
 
   const save = () => {
@@ -73,9 +110,12 @@ export default function TeamMembers() {
 
   const columns = [
     { key: 'name', label: 'Telecaller', primary: true, render: (m) => (
-      <div>
-        <strong>{m.name}</strong>
-        <div className="cv-muted" style={{ fontSize: 12 }}>@{m.username}{m.mobile ? ` · ${m.mobile}` : ''}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="cv-tele-ava" style={{ width: 34, height: 34, fontSize: 13 }}>{initials(m.name, m.mobile)}</div>
+        <div>
+          <strong>{m.name}</strong>
+          <div className="cv-muted" style={{ fontSize: 12 }}>@{m.username}{m.mobile ? ` · ${m.mobile}` : ''}</div>
+        </div>
       </div>
     ) },
     { key: 'passcode', label: 'Passcode', render: (m) => <Secret value={m.password_str} /> },
@@ -113,14 +153,14 @@ export default function TeamMembers() {
       {msg && <div className="cv-alert cv-alert--ok" style={{ marginBottom: 12 }} onClick={() => setMsg('')}>{msg}</div>}
 
       {stats && (
-        <div className="cv-kpis" style={{ marginBottom: 16 }}>
+        <div className="cv-kpis cv-kpis--even" style={{ marginBottom: 16 }}>
           <Kpi icon={Headphones} label="Team members" value={(stats.total_team_members || 0).toLocaleString('en-IN')} />
-          <Kpi label="Total leads" value={(stats.total_leads || 0).toLocaleString('en-IN')} />
-          <Kpi label="📞 Calls done" value={(stats.calls_completed || 0).toLocaleString('en-IN')} />
-          <Kpi label="🟢 Interested" value={(stats.interested || 0).toLocaleString('en-IN')} tone={stats.interested ? undefined : undefined} />
-          <Kpi label="🔴 Not interested" value={(stats.not_interested || 0).toLocaleString('en-IN')} />
-          <Kpi label="📱 Unreachable" value={((stats.switch_off || 0) + (stats.not_answered || 0) + (stats.will_call_back || 0)).toLocaleString('en-IN')} />
-          <Kpi label="⭐ Active Pro" value={(stats.pro_users || 0).toLocaleString('en-IN')} />
+          <Kpi icon={Users} label="Total leads" value={(stats.total_leads || 0).toLocaleString('en-IN')} />
+          <Kpi icon={PhoneCall} label="Calls done" value={(stats.calls_completed || 0).toLocaleString('en-IN')} tone="info" />
+          <Kpi icon={ThumbsUp} label="Interested" value={(stats.interested || 0).toLocaleString('en-IN')} tone="ok" />
+          <Kpi icon={ThumbsDown} label="Not interested" value={(stats.not_interested || 0).toLocaleString('en-IN')} tone="bad" />
+          <Kpi icon={PhoneOff} label="Unreachable" value={((stats.switch_off || 0) + (stats.not_answered || 0) + (stats.will_call_back || 0)).toLocaleString('en-IN')} tone="warn" />
+          <Kpi icon={Crown} label="Active Pro" value={(stats.pro_users || 0).toLocaleString('en-IN')} tone="info" />
         </div>
       )}
 
@@ -152,8 +192,11 @@ export default function TeamMembers() {
             <Field label="TeleCMI Softphone Password" hint={editId ? 'Leave blank to keep. Enables browser calling (talk through the computer, no mobile ring).' : 'Enables browser calling — talk through the computer, no mobile ring.'}>
               <Input value={form.telecmi_password} placeholder="TeleCMI user's softphone password" onChange={(e) => setForm({ ...form, telecmi_password: e.target.value })} />
             </Field>
-            <Field label={editId ? 'New Password / Passcode' : 'Password / Passcode'} required={!editId} hint={editId ? 'Leave blank to keep the current passcode.' : undefined}>
-              <Input value={form.password} placeholder="Set login passcode" onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <Field label={editId ? 'New Password / Passcode' : 'Passcode (auto-generated)'} required={!editId} hint={editId ? 'Leave blank to keep the current passcode.' : 'A random 6-digit passcode is filled in for you — edit it or press Regenerate.'}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Input value={form.password} placeholder="6-digit login passcode" onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                {!editId && <Button variant="ghost" type="button" onClick={() => setForm((f) => ({ ...f, password: gen6() }))}>Regenerate</Button>}
+              </div>
             </Field>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
               <Button variant="ghost" onClick={() => setForm(null)}>Cancel</Button>

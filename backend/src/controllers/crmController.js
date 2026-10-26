@@ -16,9 +16,13 @@ const REGISTER_FLOW_TEMPLATE = process.env.REGISTER_FLOW_TEMPLATE || 'edms_reg_f
 // Meta rejects credentials in templates, so the passcode stays in the in-window msg).
 const WELCOME_TEMPLATE = process.env.WELCOME_TEMPLATE || 'edms_welcome';
 
-// A logged-in user is a CRM agent (not admin) when their group is CRM_AGENT.
+// A logged-in user is a CRM agent (not admin) when their group is a telecaller
+// group. crmAccess admits both CRM_AGENT (12) and TELECALLER (7), so BOTH must be
+// treated as agents here — otherwise a group-7 login would skip agent-scoping and
+// see every conversation/lead like an admin (privilege escalation).
 function isCrmAgent(req) {
-  return Number(req.user?.group_id) === ROLES.CRM_AGENT;
+  const g = Number(req.user?.group_id);
+  return g === ROLES.CRM_AGENT || g === ROLES.TELECALLER;
 }
 
 // The current agent's id (matches assigned_agent_id stored on conversations).
@@ -838,8 +842,16 @@ export async function syncTelecmiRecordings(req, res) {
     const days = Math.min(30, Math.max(1, Number(req.body?.days) || 3));
     const from = Date.now() - days * 86400000;
     const to = Date.now();
-    const agents = await db.collection('tbl_user').find({ user_group_id: ROLES.CRM_AGENT, telecmi_id: { $nin: [null, ''] }, telecmi_password: { $nin: [null, ''] } }).toArray();
-    if (!agents.length) return res.status(400).json({ success: false, message: 'No telecaller has TeleCMI credentials set — add a TeleCMI User ID + softphone password in Team Members.' });
+    // A telecaller syncs only their OWN recordings; an admin syncs the whole team.
+    let agents;
+    if (isCrmAgent(req)) {
+      const me = await findById(currentAgentId(req)).catch(() => null);
+      agents = me && me.telecmi_id && me.telecmi_password ? [me] : [];
+      if (!agents.length) return res.status(400).json({ success: false, message: 'No TeleCMI softphone is set on your account — ask the admin to add it in Team Members.' });
+    } else {
+      agents = await db.collection('tbl_user').find({ user_group_id: ROLES.CRM_AGENT, telecmi_id: { $nin: [null, ''] }, telecmi_password: { $nin: [null, ''] } }).toArray();
+      if (!agents.length) return res.status(400).json({ success: false, message: 'No telecaller has TeleCMI credentials set — add a TeleCMI User ID + softphone password in Team Members.' });
+    }
 
     let imported = 0, skipped = 0;
     for (const a of agents) {
@@ -849,7 +861,13 @@ export async function syncTelecmiRecordings(req, res) {
       catch (e) { console.warn('[sync-recordings]', a.user_name, e.message); continue; }
       for (const c of cdrs) {
         if (!c.number || c.number.length !== 10) { skipped += 1; continue; }
-        if (c.cmiuid && await db.collection('tbl_crm_message').findOne({ 'metadata.cmiuuid': c.cmiuid }, { projection: { _id: 1 } })) { skipped += 1; continue; }
+        // Dedup: skip if this call was already logged — by the live CDR webhook's
+        // uuid OR by the recording filename (the webhook stores a different uuid
+        // field than the user-CDR API, so match the filename too to avoid doubles).
+        const dupOr = [];
+        if (c.cmiuid) dupOr.push({ 'metadata.cmiuuid': c.cmiuid });
+        if (c.filename) dupOr.push({ 'metadata.recording': c.filename });
+        if (dupOr.length && await db.collection('tbl_crm_message').findOne({ $or: dupOr }, { projection: { _id: 1 } })) { skipped += 1; continue; }
         const at = new Date(c.time);
         const body = c.answered ? `${c.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} call answered (${c.duration}s)` : `${c.direction === 'outgoing' ? 'Outgoing' : 'Incoming'} call missed`;
         await db.collection('tbl_crm_message').insertOne({

@@ -17,9 +17,11 @@ export function WebPhoneProvider({ children }) {
   const [status, setStatus] = useState('idle'); // idle | connecting | ready | unavailable | error
   const [reason, setReason] = useState('');       // why unavailable (admin / missing creds)
   const [call, setCall] = useState(null);         // { contact, number, state, startedAt }
+  const [recSync, setRecSync] = useState(0);       // bumped after an auto recording-sync, so the inbox refreshes
   const callRef = useRef(null);
   callRef.current = call;
   const pendingRef = useRef(null);                 // an outbound web call we just asked TeleCMI to bridge
+  const bridgingRef = useRef(false);               // our own leg is up; the LEAD is still being dialed (keep "Ringing…")
 
   // POST the finished call's outcome into the lead history.
   const logOutcome = useCallback((c, outcome) => {
@@ -41,16 +43,54 @@ export function WebPhoneProvider({ children }) {
         piopiyRef.current = piopiy;
 
         const log = (ev, o) => console.info(`[webphone] ${ev}`, o || '');
-        piopiy.on('login', (o) => { log('login', o); if (!cancelled && (o?.code === 200 || o?.code === undefined)) setStatus('ready'); });
-        piopiy.on('loginFailed', (o) => { log('loginFailed', o); if (!cancelled) { setStatus('error'); setReason('TeleCMI softphone login failed — check the telecaller’s TeleCMI User ID/password.'); } });
+        let loginOk = false;
+        piopiy.on('login', (o) => { log('login', o); if (!cancelled && (o?.code === 200 || o?.code === undefined)) { loginOk = true; setStatus('ready'); } });
+        // A 407 is the normal SIP auth challenge and is immediately followed by a
+        // successful login, so a loginFailed is almost always transient. Don't flag
+        // an error right away — only if we still aren't 'ready' a few seconds later.
+        piopiy.on('loginFailed', (o) => {
+          log('loginFailed', o);
+          if (cancelled || loginOk) return;
+          setTimeout(() => {
+            if (!cancelled && !loginOk) {
+              setStatus('error');
+              setReason('TeleCMI softphone login failed — check the telecaller’s TeleCMI User ID/password.');
+            }
+          }, 8000);
+        });
         piopiy.on('trying', (o) => { log('trying', o); setCall((c) => c && { ...c, state: 'trying' }); });
         piopiy.on('ringing', (o) => { log('ringing', o); setCall((c) => c && { ...c, state: 'ringing' }); });
-        piopiy.on('answered', (o) => { log('answered', o); setCall((c) => c && { ...c, state: 'answered', startedAt: c.startedAt || Date.now() }); });
-        piopiy.on('callStream', (o) => { log('callStream', o); setCall((c) => c && { ...c, state: 'answered', startedAt: c.startedAt || Date.now() }); });
+        piopiy.on('answered', (o) => {
+          log('answered', o);
+          // On an outbound web call our OWN leg auto-answers first while the lead is
+          // still ringing — ignore that one (keep showing "Ringing…"); the lead's
+          // actual answer arrives as a later answered/callStream event.
+          if (bridgingRef.current) { bridgingRef.current = false; return; }
+          setCall((c) => c && { ...c, state: 'answered', startedAt: c.startedAt || Date.now() });
+        });
+        piopiy.on('callStream', (o) => {
+          log('callStream', o);
+          // Media is flowing → the lead has connected. Start the timer now.
+          bridgingRef.current = false;
+          setCall((c) => c && { ...c, state: 'answered', startedAt: c.startedAt || Date.now() });
+        });
         const onEnd = (o) => {
           log('hangup/ended', o);
+          bridgingRef.current = false;
           const c = callRef.current;
           if (c) logOutcome(c, c.state === 'answered' ? 'answered' : (o?.code && o.code !== 200 ? 'failed' : 'missed'));
+          // An answered call has a recording on TeleCMI a few seconds later. Pull it
+          // in automatically (a couple of attempts, since processing takes a moment)
+          // so the voice recording appears in the thread on its own — no manual sync.
+          if (c?.state === 'answered') {
+            let tries = 0;
+            const pull = () => {
+              tries += 1;
+              api.post('/crm/sync-recordings', { days: 1 }).then(() => setRecSync(Date.now())).catch(() => {});
+              if (tries < 3) setTimeout(pull, 20000);
+            };
+            setTimeout(pull, 10000);
+          }
           setCall(null);
         };
         piopiy.on('hangup', onEnd);
@@ -63,8 +103,9 @@ export function WebPhoneProvider({ children }) {
           const pend = pendingRef.current;
           if (pend && Date.now() - pend.at < 40000) {
             pendingRef.current = null;
+            bridgingRef.current = true; // our leg answers now; keep "Ringing…" until the lead connects
             try { piopiy.answer(); } catch { /* ignore */ }
-            setCall((c) => ({ ...(c || {}), contact: pend.contact, number: pend.number, state: 'answered', direction: 'outbound', startedAt: Date.now() }));
+            setCall((c) => ({ ...(c || {}), contact: pend.contact, number: pend.number, state: 'ringing', direction: 'outbound', startedAt: null }));
             return;
           }
           const num = o?.from || o?.caller || o?.number || o?.remote || '';
@@ -85,22 +126,29 @@ export function WebPhoneProvider({ children }) {
   const startCall = useCallback(async (number, contact) => {
     const p = piopiyRef.current;
     if (!p || status !== 'ready') return { ok: false, message: reason || 'Softphone not connected yet.' };
+    // Show the call card immediately (Calling…), before the mic prompt, so there's a preview.
+    setCall({ contact: contact || {}, number, state: 'trying', direction: 'outbound', startedAt: null });
     // The browser call needs the microphone (and a secure page: localhost or https).
     // Check it first so failures are a clear message, not a silent no-ring.
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((t) => t.stop());
     } catch (e) {
+      setCall(null);
       const insecure = location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname);
       return { ok: false, message: insecure
         ? 'Microphone is blocked because the page isn’t secure. Open the CRM at http://localhost:5173 (or an https URL) to call from the browser.'
         : 'Microphone was blocked or not found. Click the 🔒 in the address bar, allow the microphone, then try again.' };
     }
     try {
-      p.call(dial(number), { crm: true });
-      setCall({ contact: contact || {}, number, state: 'trying', startedAt: null });
+      // Direct dial from the browser softphone. PIOPIY reports accurate call
+      // progress: 'ringing' while the LEAD's phone rings, 'answered' when they
+      // actually pick up (timer starts then), 'ended' on no-answer/hangup
+      // (card auto-closes). extra_param must be a string per the SDK.
+      p.call(dial(number), { extra_param: 'crm' });
       return { ok: true };
     } catch (e) {
+      setCall(null);
       return { ok: false, message: e.message || 'Could not start the call.' };
     }
   }, [status, reason]);
@@ -109,24 +157,33 @@ export function WebPhoneProvider({ children }) {
   // rings this browser softphone, which we auto-answer — the lead then sees the DID.
   const startWebCall = useCallback(async (number, contact) => {
     if (status !== 'ready') return { ok: false, message: reason || 'Softphone not connected yet.' };
+    // Show the call card immediately, the moment Call is clicked, so there is a
+    // visible preview even while the mic prompt / bridge is still being set up.
+    setCall({ contact: contact || {}, number, state: 'trying', direction: 'outbound', startedAt: null });
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((t) => t.stop());
     } catch (e) {
+      setCall(null);
       const insecure = location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname);
       return { ok: false, message: insecure
         ? 'Microphone is blocked because the page isn’t secure. Open the CRM at http://localhost:5173 (or https).'
-        : 'Microphone was blocked or not found. Allow the microphone and try again.' };
+        : 'Microphone was blocked or not found. Click the 🔒/🎤 in the address bar, allow the microphone, then click Call again.' };
     }
     pendingRef.current = { number, contact: contact || {}, at: Date.now() };
-    setCall({ contact: contact || {}, number, state: 'trying', direction: 'outbound', startedAt: null });
+    const placeCall = () => api.post(`/crm/conversations/${dial(number)}/call`, { web: true });
     try {
-      await api.post(`/crm/conversations/${dial(number)}/call`, { web: true });
+      await placeCall();
       return { ok: true };
     } catch (e) {
+      // A 5xx usually means the API restarted for a moment — retry once before failing.
+      if (e?.response?.status >= 500 || !e?.response) {
+        await new Promise((r) => setTimeout(r, 900));
+        try { await placeCall(); return { ok: true }; } catch (e2) { e = e2; }
+      }
       pendingRef.current = null;
       setCall(null);
-      return { ok: false, message: e?.response?.data?.message || 'Could not start the call.' };
+      return { ok: false, message: e?.response?.data?.message || 'Could not start the call. Please try again in a moment.' };
     }
   }, [status, reason]);
 
@@ -148,7 +205,7 @@ export function WebPhoneProvider({ children }) {
   }, []);
   useEffect(() => { if (!call) { setMuted(false); setHeld(false); } }, [call]);
 
-  const value = { ready: status === 'ready', status, reason, call, startCall, startWebCall, hangup, answer, reject, sendDtmf, muted, toggleMute, held, toggleHold };
+  const value = { ready: status === 'ready', status, reason, call, recordingSyncedAt: recSync, startCall, startWebCall, hangup, answer, reject, sendDtmf, muted, toggleMute, held, toggleHold };
   return (
     <Ctx.Provider value={value}>
       {children}
@@ -208,6 +265,8 @@ function CallBar() {
     return () => clearInterval(t);
   }, [call?.state, call?.startedAt]);
   useEffect(() => { if (!call) { setPad(false); setTyped(''); } }, [call]);
+  // When the lead actually answers, open the dialpad so DTMF digits can be pressed right away.
+  useEffect(() => { if (call?.state === 'answered') setPad(true); }, [call?.state]);
   if (!call) return null;
 
   const incoming = call.state === 'incoming';

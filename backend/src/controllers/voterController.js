@@ -1,6 +1,7 @@
 import { filterVoters, filterVotersMultiAssembly, getVoter, getVoterGlobal, getVoterScoped, voterExportCursor, updateVoterMobile } from '../models/voterModel.js';
 import { findById, findWardMainAdmin } from '../models/userModel.js';
 import { ROLES } from '../constants/roles.js';
+import { getAppDb } from '../config/db.js'; // used by resolveScope's booth-from-enquiry fallback (was missing → silent ReferenceError)
 import { isPaid, paidFlag, PAID_VALUES } from '../utils/paid.js';
 
 // Determines the voter-data scope for the logged-in user:

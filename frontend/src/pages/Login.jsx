@@ -45,7 +45,7 @@ export default function Login() {
                 <span className="en-in"><User size={19} className="ico" aria-hidden="true" /><input id="username" type="text" inputMode="numeric" value={username} onChange={(e) => setUsername(e.target.value)} placeholder={t('10-digit mobile number', '10 இலக்க கைபேசி எண்')} autoComplete="username" required /></span>
               </label>
               <label className="en-f"><span className="lbl">{t('Passcode', 'கடவுச்சொல்')}</span>
-                <span className="en-in"><Lock size={19} className="ico" aria-hidden="true" /><input id="password" type="password" inputMode="numeric" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('6-digit passcode', '6 இலக்க கடவுச்சொல்')} autoComplete="current-password" required /></span>
+                <span className="en-in"><Lock size={19} className="ico" aria-hidden="true" /><input id="password" name="passcode" type="password" inputMode="numeric" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('6-digit passcode', '6 இலக்க கடவுச்சொல்')} autoComplete="one-time-code" required /></span>
               </label>
               <div className="en-actions">
                 <button className="en-btn" type="submit" disabled={loading}>{loading ? t('Signing in…', 'உள்நுழைகிறது…') : t('Sign in', 'உள்நுழைக')} {!loading && <ArrowRight size={18} aria-hidden="true" />}</button>

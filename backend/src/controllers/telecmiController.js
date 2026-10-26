@@ -19,6 +19,20 @@ export async function getRecording(req, res) {
   try {
     const file = String(req.query.file || '').trim();
     if (!file || /[\/\\]/.test(file)) return res.status(400).json({ success: false, message: 'Invalid recording file.' });
+
+    // A telecaller may only stream recordings from their OWN conversations; admins
+    // are unrestricted. (Previously ANY crmAccess caller could stream any file.)
+    const isAdmin = Number(req.user?.group_id) === ROLES.SUPER_ADMIN;
+    if (!isAdmin && req.user?.sub && req.user.sub !== 'admin') {
+      const db = getAppDb();
+      const msg = await db.collection('tbl_crm_message').findOne({ 'metadata.recording': file }, { projection: { clean_mobile: 1 } });
+      if (!msg) return res.status(404).json({ success: false, message: 'Recording not found.' });
+      const conv = await db.collection('tbl_crm_conversation').findOne({ clean_mobile: msg.clean_mobile }, { projection: { assigned_agent_id: 1 } });
+      if (!conv || String(conv.assigned_agent_id) !== String(req.user.sub)) {
+        return res.status(403).json({ success: false, message: 'This recording is not from one of your leads.' });
+      }
+    }
+
     const appid = process.env.TELECMI_APP_ID;
     const secret = process.env.TELECMI_APP_SECRET;
     if (!appid || !secret) return res.status(503).json({ success: false, message: 'TeleCMI is not configured.' });
@@ -46,6 +60,17 @@ function appidOk(body) {
   return String(body.appid) === String(expected);
 }
 
+// Stronger anti-spoofing than the (non-secret, omittable) appid: when
+// TELECMI_WEBHOOK_SECRET is set, the webhook/flow URL configured in TeleCMI must
+// carry ?token=<secret> (or an x-webhook-token header). Set it in production.
+// When unset, we fall back to the appid check (document: enable this for live).
+function webhookSecretOk(req) {
+  const want = process.env.TELECMI_WEBHOOK_SECRET;
+  if (!want) return true;
+  const got = req.query?.token || req.body?.token || req.headers['x-webhook-token'] || '';
+  return String(got) === String(want);
+}
+
 /**
  * POST /api/telecmi/webhook — Call Detail Record (and events).
  * Logs the call into tbl_crm_conversation.status_history + a tbl_crm_message.
@@ -54,6 +79,7 @@ function appidOk(body) {
 export async function webhook(req, res) {
   try {
     const b = req.body || {};
+    if (!webhookSecretOk(req)) return res.status(403).json({ success: false });
     if (!appidOk(b)) return res.status(403).json({ success: false });
     // Only CDRs carry the final call outcome; ignore interim "event" pings.
     if (String(b.type || 'cdr') !== 'cdr') return res.json({ success: true });
@@ -129,6 +155,7 @@ async function routableAgents(db) {
 export async function flow(req, res) {
   try {
     const b = { ...(req.query || {}), ...(req.body || {}) };
+    if (!webhookSecretOk(req)) return res.status(403).json({ code: 403 });
     if (b.appid !== undefined && !appidOk(b)) return res.status(403).json({ code: 403 });
 
     const db = getAppDb();

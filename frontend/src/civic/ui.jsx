@@ -288,7 +288,7 @@ export function RowMenu({ items, label = 'More actions' }) {
 
   return (
     <span className="cv-row-menu-wrap" onClick={(e) => e.stopPropagation()}>
-      <button ref={btnRef} type="button" className="cv-icon-btn cv-row-menu-btn" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}><MoreHorizontal size={16} /></button>
+      <button ref={btnRef} type="button" className={`cv-icon-btn cv-row-menu-btn ${open ? 'cv-row-menu-btn--open' : ''}`} aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}><MoreHorizontal size={16} /></button>
       {open && createPortal(
         // Rendered off-screen+hidden until measured, so it never flashes in the wrong place.
         <div ref={menuRef} className="cv-row-menu cv-row-menu--fixed" role="menu"

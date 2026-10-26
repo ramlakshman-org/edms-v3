@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { markLeadRegistered, recordWebsiteEvent } from '../services/leads.js';
+import { markLeadRegistered, recordWebsiteEvent, markCrmLeadStatus } from '../services/leads.js';
 import { getFeatureSettings, isOnFor, WEBSITE_LOGIN_TEXT, BOT_NUMBER } from '../services/features.js';
 import { onRegistered } from '../services/reminders.js';
 import { signToken, revokeToken } from '../middleware/auth.js';
@@ -7,12 +7,24 @@ import { findByCredentials, findById, nextUserId, existsByMobile, insertUser, bl
 import { isAppDbOnline, getAppDb } from '../config/db.js';
 import { ROLES, ROLE_NAME, roleHome } from '../constants/roles.js';
 import { isPaid, paidFlag, PAID_VALUES } from '../utils/paid.js';
+import { genPasscode, genOtp } from '../utils/passcode.js';
 import { wactoConfigured, sendWactoCredentials } from '../services/wactoService.js';
 
 // Set the JWT as an HttpOnly cookie so it can't be read/stolen by JavaScript
 // (XSS). Secure in production; SameSite=Strict since the SPA and API share an
 // origin. A token is still returned in the JSON body for backward compatibility.
-const AUTH_COOKIE_MAX_AGE = 40 * 60 * 1000; // aligns with JWT TTL
+// Derive the cookie lifetime from the SAME source as the JWT (JWT_EXPIRES_IN) so
+// the cookie and token never disagree (previously hard-coded 40m while the env
+// shipped 1d). Supports Ns / Nm / Nh / Nd; defaults to 40m.
+function jwtTtlMs() {
+  const v = String(process.env.JWT_EXPIRES_IN || '40m').trim();
+  const m = v.match(/^(\d+)\s*([smhd])$/i);
+  if (!m) return 40 * 60 * 1000;
+  const n = Number(m[1]);
+  const mult = { s: 1000, m: 60000, h: 3600000, d: 86400000 }[m[2].toLowerCase()];
+  return n * mult;
+}
+const AUTH_COOKIE_MAX_AGE = jwtTtlMs(); // matches the JWT TTL
 function setAuthCookie(res, token) {
   res.cookie('edm_token', token, {
     httpOnly: true,
@@ -21,6 +33,35 @@ function setAuthCookie(res, token) {
     maxAge: AUTH_COOKIE_MAX_AGE,
     path: '/',
   });
+}
+
+// Per-account lockout: after too many failed attempts for one identifier within a
+// window, lock that identifier for a cool-off. Defends weak 6-digit passcodes
+// against distributed brute force (nginx/app IP rate-limits are per-IP; this is
+// per-account). Stored in tbl_login_attempts (TTL-cleaned via ensureAppIndexes).
+const LOCK_MAX = Number(process.env.LOGIN_LOCK_MAX) || 8;
+const LOCK_WINDOW_MS = (Number(process.env.LOGIN_LOCK_WINDOW_MIN) || 15) * 60 * 1000;
+const LOCK_FOR_MS = (Number(process.env.LOGIN_LOCK_MIN) || 15) * 60 * 1000;
+async function lockMinutesLeft(db, id) {
+  try {
+    const rec = await db.collection('tbl_login_attempts').findOne({ _id: id }, { projection: { locked_until: 1 } });
+    const left = rec?.locked_until ? rec.locked_until - Date.now() : 0;
+    return left > 0 ? Math.ceil(left / 60000) : 0;
+  } catch { return 0; }
+}
+async function recordLoginFail(db, id) {
+  try {
+    const now = Date.now();
+    const rec = await db.collection('tbl_login_attempts').findOne({ _id: id });
+    const fresh = rec && (now - (rec.first_at || 0)) < LOCK_WINDOW_MS;
+    const count = fresh ? (rec.count || 0) + 1 : 1;
+    const set = { count, first_at: fresh ? (rec.first_at || now) : now, updated_at: new Date() };
+    if (count >= LOCK_MAX) { set.locked_until = now + LOCK_FOR_MS; set.count = 0; set.first_at = now; }
+    await db.collection('tbl_login_attempts').updateOne({ _id: id }, { $set: set }, { upsert: true });
+  } catch { /* best-effort */ }
+}
+async function clearLoginFails(db, id) {
+  try { await db.collection('tbl_login_attempts').deleteOne({ _id: id }); } catch { /* ignore */ }
 }
 
 // Mirrors LoginController@submitLogin: match tbl_user by mobile_no + password_str,
@@ -54,12 +95,23 @@ export async function login(req, res) {
     return res.status(503).json({ success: false, message: 'App database unavailable. Use the admin bootstrap login or configure MONGO_APP_URL.' });
   }
 
+  const db = getAppDb();
+  const lockId = username.toLowerCase();
+  const lockedMin = await lockMinutesLeft(db, lockId);
+  if (lockedMin > 0) {
+    return res.status(429).json({ success: false, code: 'account_locked', message: `Too many failed attempts. Please try again in about ${lockedMin} minute(s).` });
+  }
+
   try {
     const user = await findByCredentials(username, password);
-    if (!user) return res.status(401).json({ success: false, message: 'Invalid login or password.' });
+    if (!user) {
+      await recordLoginFail(db, lockId);
+      return res.status(401).json({ success: false, message: 'Invalid login or password.' });
+    }
     if (Number(user.is_active ?? 1) !== 1 && Number(user.user_group_id) !== ROLES.MLA) {
       return res.status(403).json({ success: false, message: 'Your account is deactivated.' });
     }
+    await clearLoginFails(db, lockId);
 
     const groupId = Number(user.user_group_id || 0);
     // Booth logins (group 4) need at least one booth — accept either a single
@@ -128,7 +180,7 @@ export async function sendOtp(req, res) {
     return res.status(501).json({ success: false, message: 'OTP service is not configured.' });
   }
   try {
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = genOtp();
     const now = Date.now();
     await getAppDb().collection('tbl_otp').updateOne(
       { mobile },
@@ -216,7 +268,7 @@ export async function register(req, res) {
     );
     if (taken) return alreadyRegistered(res, db, mobile);
 
-    const passcode = String(Math.floor(100000 + Math.random() * 900000));
+    const passcode = genPasscode();
     const district = b.district || '';
     const bodyType = b.body_type || '';
     const position = b.position || '';
@@ -275,6 +327,7 @@ export async function register(req, res) {
     // Consume the verified OTP so it can't be reused.
     await db.collection('tbl_otp').deleteOne({ mobile }).catch(() => {});
     await markLeadRegistered(db, mobile); // Incomplete registrations: this number now has an account
+    await markCrmLeadStatus(db, mobile, 'registration_completed', 'Website registration completed'); // keep the CRM pipeline in sync
     await recordWebsiteEvent(db, { mobile, event: 'submit' }).catch(() => {});
     await recordWebsiteEvent(db, { mobile, event: 'complete' }).catch(() => {}); // website journey: submitted + completed
     const lang = b.lang === 'ta' ? 'ta' : 'en';
@@ -342,6 +395,19 @@ export async function me(req, res) {
 // user activity (throttled), so background polling can't keep an idle session
 // alive. Re-issues a fresh token from the already-verified claims.
 export async function refresh(req, res) {
+  // Re-validate the account on every slide, so a deactivated/deleted user can't
+  // keep an idle session alive forever by refreshing. Admin bootstrap (sub:'admin')
+  // has no DB row and is skipped; if the app DB is offline we allow the slide (degraded).
+  if (req.user?.sub && req.user.sub !== 'admin' && isAppDbOnline()) {
+    try {
+      const u = await findById(req.user.sub);
+      const inactive = !u || (Number(u.is_active ?? 1) !== 1 && Number(u.user_group_id) !== ROLES.MLA);
+      if (inactive) {
+        res.clearCookie('edm_token', { path: '/' });
+        return res.status(401).json({ success: false, message: 'Your account is no longer active. Please sign in again.' });
+      }
+    } catch { /* lookup failed → allow the slide rather than locking out on a transient error */ }
+  }
   const claims = { ...(req.user || {}) };
   // Drop JWT-managed fields so signToken can set fresh iat/exp/jti.
   delete claims.iat;

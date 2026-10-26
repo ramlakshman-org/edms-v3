@@ -1,9 +1,33 @@
 /* WATI-style shared inbox — conversation list · chat thread · lead details. */
-.cv-inbox { display: flex; height: calc(100vh - 148px); min-height: 460px; border: 1px solid var(--cv-line, #e5e7eb); border-radius: 14px; overflow: hidden; background: var(--cv-surface, #fff); }
+.cv-inbox {
+  display: flex;
+  height: calc(100vh - 148px);
+  min-height: 460px;
+  border: 1px solid var(--cv-line, #e5e7eb);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--cv-surface, #fff);
+  font-family: var(--cv-font);
+  color: var(--cv-ink);
+}
 /* The legacy global `button{height:40px;…}` must not shrink/colour the inbox's own buttons. */
-.cv-inbox-convo, .cv-inbox-chip, .cv-inbox-back { height: auto; background: none; color: inherit; font-weight: 400; }
+.cv-inbox-convo, .cv-inbox-chip, .cv-inbox-back { height: auto; background: none; color: inherit; font-weight: 400; font-family: var(--cv-font); }
 .cv-inbox-convo { border-radius: 0; }
-.cv-inbox-status-bar button { height: auto; } /* keep the pill's own colour/radius */
+.cv-inbox-status-bar button {
+  height: auto;
+  cursor: pointer;
+  border: none;
+  font-family: var(--cv-font);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 999px;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.cv-inbox-status-bar button:hover {
+  transform: translateY(-1px);
+  opacity: 0.9;
+}
 
 /* ── list ── */
 .cv-inbox-list { width: 320px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--cv-line, #e5e7eb); min-width: 0; }

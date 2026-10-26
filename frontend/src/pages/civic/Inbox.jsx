@@ -66,6 +66,10 @@ export default function Inbox() {
 
   const refreshThread = () => { if (sel) { api.get(`/crm/conversations/${sel}`).then(({ data }) => setThread(data)).catch(() => {}); loadList(); } };
 
+  // After a web call ends, the softphone auto-pulls the TeleCMI recording; refresh
+  // the open thread so the voice recording shows up on its own.
+  useEffect(() => { if (webphone.recordingSyncedAt) refreshThread(); }, [webphone.recordingSyncedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const contact = thread?.contact;
   const windowOpen = !!contact?.window_active;
 
@@ -87,10 +91,33 @@ export default function Inbox() {
       .finally(() => setSyncing(false));
   };
   const claim = () => { if (!sel) return; api.post(`/crm/conversations/${sel}/claim`).then(refreshThread).catch((e) => setErr(e?.response?.data?.message || 'Could not claim.')); };
-  const callLead = () => {
+  const callLead = async () => {
     if (!sel) return;
-    if (webphone.ready) { webphone.startWebCall(sel, contact || {}); return; }
-    api.post(`/crm/conversations/${sel}/call`).then(refreshThread).catch((e) => setErr(e?.response?.data?.message || 'Could not call.'));
+    // Browser softphone ready → place a WEB call: TeleCMI rings this browser (auto-
+    // answered) and dials the lead with the office DID as caller id. No mobile rings,
+    // and the call card (preview) shows immediately.
+    if (webphone.ready) {
+      const r = await webphone.startCall(sel, contact || {});
+      if (r && !r.ok) setToast(r.message || 'Could not start the web call.');
+      return;
+    }
+    // Still registering — ask the user to wait rather than firing a call.
+    if (webphone.status === 'connecting' || webphone.status === 'idle') {
+      setToast('Web phone is still connecting — wait a moment, then click Call again.');
+      return;
+    }
+    // No softphone in THIS browser (e.g. the admin). Ring the lead's ASSIGNED
+    // telecaller's browser softphone instead — a web call, so the lead sees the
+    // office DID and no mobile rings; the dialer pops in the telecaller's browser
+    // (another window/device) for them to answer. Needs them to be logged in.
+    const who = contact?.assigned_agent_name && contact.assigned_agent_name !== '-' ? contact.assigned_agent_name : 'the assigned telecaller';
+    try {
+      const { data } = await api.post(`/crm/conversations/${sel}/call`, { web: true });
+      setToast(data?.message || `Ringing ${who}’s web phone — they answer in their browser. The lead sees the office number.`);
+      refreshThread();
+    } catch (e) {
+      setToast(e?.response?.data?.message || `Could not start the call. Make sure ${who} is logged in (their web phone must show “ready”).`);
+    }
   };
 
   const unassigned = contact && !contact.assigned_agent_id && (!contact.assigned_agent_name || contact.assigned_agent_name === '-');

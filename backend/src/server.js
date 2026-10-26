@@ -80,6 +80,16 @@ function validateEnv() {
   }
 }
 
+// A stray rejection/throw in a fire-and-forget path (webhooks ack 200 then work
+// async) must not take the whole API down. Log and keep serving; in production the
+// process manager (PM2) can still be configured to restart on repeated failures.
+process.on('unhandledRejection', (reason) => {
+  console.error('[edm] unhandledRejection:', reason && reason.stack ? reason.stack : reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[edm] uncaughtException:', err && err.stack ? err.stack : err);
+});
+
 (async () => {
   validateEnv();
   await connectDbs();
