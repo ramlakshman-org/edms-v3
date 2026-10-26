@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { Phone, PhoneCall, ThumbsUp, ThumbsDown, Smartphone, Star, Users, ListChecks } from 'lucide-react';
+import { Phone, PhoneCall, ThumbsUp, ThumbsDown, PhoneOff, Sparkles, ShieldCheck, Users, ListChecks } from 'lucide-react';
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { PageHeader, Card, Kpi, BarChart, Pill } from '../../civic/kit.jsx';
@@ -42,7 +42,7 @@ export default function TelecallerDashboard({ adminView = false }) {
   const agentName = adminView ? (agents.find((a) => a.id === agentId)?.name || '') : (user?.name || 'You');
 
   return (
-    <>
+    <div className="cv-page">
       <PageHeader
         eyebrow={adminView ? 'Telecalling' : 'My work'}
         title={adminView ? 'Telecaller View' : 'Dashboard'}
@@ -65,12 +65,12 @@ export default function TelecallerDashboard({ adminView = false }) {
         <>
           <div className="cv-kpis" style={{ marginBottom: 16 }}>
             <Kpi icon={Users} label="Total leads" value={(stats.total || 0).toLocaleString('en-IN')} note={`${(stats.registered || 0).toLocaleString('en-IN')} registered`} hero />
-            <Kpi icon={PhoneCall} label="📞 Total calls done" value={(stats.calls_total || 0).toLocaleString('en-IN')} note={`${(stats.calls_today || 0).toLocaleString('en-IN')} today`} />
-            <Kpi icon={ThumbsUp} label="🟢 Interested" value={(stats.interested || 0).toLocaleString('en-IN')} />
-            <Kpi icon={ThumbsDown} label="🔴 Not interested" value={(stats.not_interested || 0).toLocaleString('en-IN')} />
-            <Kpi icon={Smartphone} label="📱 Unreachable / Call back" value={unreachable.toLocaleString('en-IN')} tone="warn" />
-            <Kpi icon={Star} label="⭐ Converted" value={(stats.converted || 0).toLocaleString('en-IN')} note={`${stats.conversion_rate || 0}% conversion`} />
-            <Kpi icon={Star} label="Active Pro users" value={(stats.pro || 0).toLocaleString('en-IN')} />
+            <Kpi icon={PhoneCall} label="Total calls done" value={(stats.calls_total || 0).toLocaleString('en-IN')} note={`${(stats.calls_today || 0).toLocaleString('en-IN')} today`} />
+            <Kpi icon={ThumbsUp} label="Interested" value={(stats.interested || 0).toLocaleString('en-IN')} tone="ok" />
+            <Kpi icon={ThumbsDown} label="Not interested" value={(stats.not_interested || 0).toLocaleString('en-IN')} tone="bad" />
+            <Kpi icon={PhoneOff} label="Unreachable / Call back" value={unreachable.toLocaleString('en-IN')} tone="warn" />
+            <Kpi icon={Sparkles} label="Converted" value={(stats.converted || 0).toLocaleString('en-IN')} note={`${stats.conversion_rate || 0}% conversion`} tone="ok" />
+            <Kpi icon={ShieldCheck} label="Active Pro users" value={(stats.pro || 0).toLocaleString('en-IN')} tone="info" />
           </div>
 
           <div className="cv-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
@@ -82,7 +82,7 @@ export default function TelecallerDashboard({ adminView = false }) {
                 <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }}>
                   {bd.filter((s) => s.count > 0).map((s) => { const m = statusMeta(s.status); return (
                     <li key={s.status} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Pill tone={m.tone}>{m.emoji} {m.label}</Pill>
+                      <Pill tone={m.tone} dot>{m.label}</Pill>
                       <strong>{s.count.toLocaleString('en-IN')}</strong>
                     </li>
                   ); })}
@@ -98,7 +98,7 @@ export default function TelecallerDashboard({ adminView = false }) {
                   <li key={r.clean_mobile} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span><strong>{r.contact_name || `User ${String(r.clean_mobile).slice(-4)}`}</strong> <span className="cv-muted">· {r.clean_mobile}</span></span>
                     <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <Pill tone={m.tone}>{m.emoji} {m.label}</Pill>
+                      <Pill tone={m.tone} dot>{m.label}</Pill>
                       <span className="cv-muted" style={{ fontSize: 12 }}>{fmtDateTime(r.last_message_at)}</span>
                     </span>
                   </li>
@@ -108,6 +108,6 @@ export default function TelecallerDashboard({ adminView = false }) {
           </Card>
         </>
       )}
-    </>
+    </div>
   );
 }

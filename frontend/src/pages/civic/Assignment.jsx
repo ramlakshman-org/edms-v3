@@ -64,7 +64,7 @@ export default function Assignment() {
   }
 
   return (
-    <>
+    <div className="cv-page">
       <PageHeader
         eyebrow="Telecalling"
         title="Lead Assignment"
@@ -114,6 +114,6 @@ export default function Assignment() {
           </div>
         )}
       </Card>
-    </>
+    </div>
   );
 }

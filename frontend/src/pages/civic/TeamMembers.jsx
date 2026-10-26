@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { UserPlus, Shuffle, Headphones, Pencil, Trash2, Power, Eye, Phone } from 'lucide-react';
+import { UserPlus, Shuffle, Headphones, Pencil, Trash2, Power, Eye, Phone, PhoneCall, ThumbsUp, ThumbsDown, PhoneOff, Sparkles, Users } from 'lucide-react';
 import api from '../../api/client.js';
 import { PageHeader, Card, Kpi, Pill } from '../../civic/kit.jsx';
 import { DataTable, Button, Modal, Field, Input, Secret, RowMenu, loadError, fmtDateTime, waLink } from '../../civic/ui.jsx';
@@ -96,7 +96,7 @@ export default function TeamMembers() {
   ];
 
   return (
-    <>
+    <div className="cv-page">
       <PageHeader
         eyebrow="Telecalling"
         title="Team Members"
@@ -115,12 +115,12 @@ export default function TeamMembers() {
       {stats && (
         <div className="cv-kpis" style={{ marginBottom: 16 }}>
           <Kpi icon={Headphones} label="Team members" value={(stats.total_team_members || 0).toLocaleString('en-IN')} />
-          <Kpi label="Total leads" value={(stats.total_leads || 0).toLocaleString('en-IN')} />
-          <Kpi label="📞 Calls done" value={(stats.calls_completed || 0).toLocaleString('en-IN')} />
-          <Kpi label="🟢 Interested" value={(stats.interested || 0).toLocaleString('en-IN')} tone={stats.interested ? undefined : undefined} />
-          <Kpi label="🔴 Not interested" value={(stats.not_interested || 0).toLocaleString('en-IN')} />
-          <Kpi label="📱 Unreachable" value={((stats.switch_off || 0) + (stats.not_answered || 0) + (stats.will_call_back || 0)).toLocaleString('en-IN')} />
-          <Kpi label="⭐ Active Pro" value={(stats.pro_users || 0).toLocaleString('en-IN')} />
+          <Kpi icon={Users} label="Total leads" value={(stats.total_leads || 0).toLocaleString('en-IN')} />
+          <Kpi icon={PhoneCall} label="Calls done" value={(stats.calls_completed || 0).toLocaleString('en-IN')} />
+          <Kpi icon={ThumbsUp} label="Interested" value={(stats.interested || 0).toLocaleString('en-IN')} tone="ok" />
+          <Kpi icon={ThumbsDown} label="Not interested" value={(stats.not_interested || 0).toLocaleString('en-IN')} tone="bad" />
+          <Kpi icon={PhoneOff} label="Unreachable" value={((stats.switch_off || 0) + (stats.not_answered || 0) + (stats.will_call_back || 0)).toLocaleString('en-IN')} tone="warn" />
+          <Kpi icon={Sparkles} label="Active Pro" value={(stats.pro_users || 0).toLocaleString('en-IN')} tone="info" />
         </div>
       )}
 
@@ -162,6 +162,6 @@ export default function TeamMembers() {
           </>
         )}
       </Modal>
-    </>
+    </div>
   );
 }

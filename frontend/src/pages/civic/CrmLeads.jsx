@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Phone, MessageCircle, Search, Shuffle, StickyNote, Clock, UserCheck, Hand } from 'lucide-react';
+import { Phone, MessageCircle, Search, Shuffle, StickyNote, Clock, UserCheck, Hand, Sparkles, Lock } from 'lucide-react';
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useWebPhone, WebPhoneBadge } from '../../civic/webphone.jsx';
@@ -64,14 +64,14 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
     ) },
     { key: 'flags', label: 'Candidate', medium: false, render: (r) => (
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <Pill tone={r.is_registered ? 'ok' : 'neutral'}>{r.is_registered ? 'Registered' : 'Not registered'}</Pill>
-        {r.is_pro && <Pill tone="info">⭐ Pro</Pill>}
+        <Pill tone={r.is_registered ? 'ok' : 'neutral'} dot>{r.is_registered ? 'Registered' : 'Not registered'}</Pill>
+        {r.is_pro && <Pill tone="info" icon={Sparkles}>Pro</Pill>}
       </div>
     ) },
-    { key: 'status', label: 'Lead status', render: (r) => { const m = statusMeta(r.lead_status); return <Pill tone={m.tone}>{m.emoji} {m.label}</Pill>; } },
+    { key: 'status', label: 'Lead status', render: (r) => { const m = statusMeta(r.lead_status); return <Pill tone={m.tone} dot>{m.label}</Pill>; } },
     { key: 'agent', label: 'Telecaller', medium: false, render: (r) => (
       r.assigned_agent_id
-        ? <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>{r.assigned_agent_name || 'Assigned'}{r.taken && <Pill tone="info">🔒 Taken</Pill>}</span>
+        ? <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>{r.assigned_agent_name || 'Assigned'}{r.taken && <Pill tone="info" icon={Lock}>Claimed</Pill>}</span>
         : <Pill tone="warn">Unassigned</Pill>
     ) },
     { key: 'last', label: 'Last activity', align: 'right', medium: false, render: (r) => <span className="cv-muted" style={{ fontSize: 12 }}>{fmtDateTime(r.last_message_at)}</span> },
@@ -87,7 +87,7 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
   };
 
   return (
-    <>
+    <div className="cv-page">
       <PageHeader
         eyebrow={isAdmin ? 'Telecalling' : 'My work'}
         title={title}
@@ -138,7 +138,7 @@ export default function CrmLeads({ scope = 'all', title = 'CRM Leads', subtitle 
         setMsg={setMsg}
         setErr={setErr}
       />
-    </>
+    </div>
   );
 }
 
@@ -211,16 +211,16 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
     <Modal open={!!contact} title={contact.name || `Lead ${String(contact.clean_mobile).slice(-4)}`} onClose={onClose} width={620}>
       <div style={{ display: 'grid', gap: 14 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Pill tone={contact.is_registered ? 'ok' : 'neutral'}>{contact.is_registered ? 'Registered' : 'Not registered'}</Pill>
-          {contact.is_pro && <Pill tone="info">⭐ Active Pro</Pill>}
+          <Pill tone={contact.is_registered ? 'ok' : 'neutral'} dot>{contact.is_registered ? 'Registered' : 'Not registered'}</Pill>
+          {contact.is_pro && <Pill tone="info" icon={Sparkles}>Active Pro</Pill>}
           {unassigned
             ? <Pill tone="warn">Unassigned</Pill>
-            : <Pill tone="neutral"><UserCheck size={12} /> {contact.assigned_agent_name}{contact.taken ? ' · 🔒 Taken' : ''}</Pill>}
-          <Pill tone={contact.window_active ? 'ok' : 'warn'}>{contact.window_active ? 'WhatsApp window open' : 'Window closed'}</Pill>
+            : <Pill tone="neutral"><UserCheck size={12} /> {contact.assigned_agent_name}{contact.taken ? ' · Claimed' : ''}</Pill>}
+          <Pill tone={contact.window_active ? 'ok' : 'warn'} dot>{contact.window_active ? 'WhatsApp window open' : 'Window closed'}</Pill>
         </div>
 
-        <div className="cv-muted" style={{ fontSize: 13 }}>
-          📱 {contact.clean_mobile} · {contact.district || '—'} · {contact.assembly || '—'}
+        <div className="cv-muted" style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Phone size={13} /> {contact.clean_mobile} · {contact.district || '—'} · {contact.assembly || '—'}
           {contact.position && contact.position !== '-' ? ` · ${contact.position}` : ''}
         </div>
 
@@ -239,8 +239,9 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
           <div className="cv-field-label" style={{ marginBottom: 6 }}>Call outcome <span className="cv-muted">(each tap is logged with the time)</span></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {STATUS_BUTTONS.map((k) => { const m = statusMeta(k); return (
-              <button key={k} type="button" className={`cv-pill cv-pill--${m.tone}`} style={{ cursor: 'pointer', border: 'none', fontSize: 13, padding: '6px 10px', opacity: saving ? 0.6 : 1 }} disabled={saving} onClick={() => setStatus(k)}>
-                {m.emoji} {m.label}
+              <button key={k} type="button" className={`cv-pill cv-pill--${m.tone}`} style={{ cursor: 'pointer', border: 'none', fontSize: 12.5, padding: '5px 10px', opacity: saving ? 0.6 : 1, display: 'inline-flex', alignItems: 'center', gap: 5 }} disabled={saving} onClick={() => setStatus(k)}>
+                <span className="cv-pill-dot" />
+                {m.label}
               </button>
             ); })}
           </div>

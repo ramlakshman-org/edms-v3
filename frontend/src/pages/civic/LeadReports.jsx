@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, CalendarRange } from 'lucide-react';
+import { Download, CalendarRange, Users, PhoneCall, ThumbsUp, ThumbsDown, PhoneOff } from 'lucide-react';
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { PageHeader, Card, Kpi, Pill, Segmented } from '../../civic/kit.jsx';
@@ -78,7 +78,7 @@ export default function LeadReports() {
 
   const columns = [
     { key: 'name', label: 'Contact', primary: true, render: (r) => <div><strong>{r.name}</strong><div className="cv-muted" style={{ fontSize: 12 }}>{r.mobile}</div></div> },
-    { key: 'status', label: 'Latest status', render: (r) => { const m = statusMeta(r.lead_status); return <Pill tone={m.tone}>{m.emoji} {m.label}</Pill>; } },
+    { key: 'status', label: 'Latest status', render: (r) => { const m = statusMeta(r.lead_status); return <Pill tone={m.tone} dot>{m.label}</Pill>; } },
     { key: 'changes', label: 'Calls/changes', align: 'right', render: (r) => (r.status_changes ?? 0).toLocaleString('en-IN') },
     ...(isAdmin ? [{ key: 'agent', label: 'Telecaller', medium: false, render: (r) => r.agent || '—' }] : []),
     { key: 'when', label: 'Last status at', align: 'right', medium: false, render: (r) => <span className="cv-muted" style={{ fontSize: 12 }}>{fmtDateTime(r.last_status_at)}</span> },
@@ -86,7 +86,7 @@ export default function LeadReports() {
   ];
 
   return (
-    <>
+    <div className="cv-page">
       <PageHeader
         eyebrow="Reports"
         title={isAdmin ? 'Lead Reports' : 'My Reports'}
@@ -121,16 +121,16 @@ export default function LeadReports() {
       </Card>
 
       <div className="cv-kpis" style={{ margin: '16px 0' }}>
-        <Kpi label="Leads in period" value={totals.leads.toLocaleString('en-IN')} hero />
-        <Kpi label="📞 Calls logged" value={totals.calls.toLocaleString('en-IN')} />
-        <Kpi label="🟢 Interested" value={totals.interested.toLocaleString('en-IN')} />
-        <Kpi label="🔴 Not interested" value={totals.not_interested.toLocaleString('en-IN')} />
-        <Kpi label="📱 Unreachable" value={totals.unreachable.toLocaleString('en-IN')} tone="warn" />
+        <Kpi icon={Users} label="Leads in period" value={totals.leads.toLocaleString('en-IN')} hero />
+        <Kpi icon={PhoneCall} label="Calls logged" value={totals.calls.toLocaleString('en-IN')} />
+        <Kpi icon={ThumbsUp} label="Interested" value={totals.interested.toLocaleString('en-IN')} tone="ok" />
+        <Kpi icon={ThumbsDown} label="Not interested" value={totals.not_interested.toLocaleString('en-IN')} tone="bad" />
+        <Kpi icon={PhoneOff} label="Unreachable" value={totals.unreachable.toLocaleString('en-IN')} tone="warn" />
       </div>
 
       <Card flush>
         <DataTable columns={columns} rows={rows} rowKey={(r) => r.mobile} loading={loading} empty="No lead activity in this period." />
       </Card>
-    </>
+    </div>
   );
 }
