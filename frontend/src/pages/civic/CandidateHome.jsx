@@ -64,6 +64,21 @@ export default function CandidateHome() {
 
   const state = status.paid ? 'active' : isSample ? 'sample' : status.pending ? 'verifying' : pendingPay ? 'unpaid' : 'active';
 
+  // Feature 1 & 2: Demographics (Women vs Men & Age Cohorts)
+  const demo = home?.demographics || (isSample ? home?.sample?.demographics : null);
+  const totalDemoVoters = demo?.total || voters || (isSample ? 705 : 0);
+  const femaleCount = demo?.female || (isSample ? 353 : 0);
+  const maleCount = demo?.male || (isSample ? 352 : 0);
+  const femalePct = totalDemoVoters ? Math.round((femaleCount / totalDemoVoters) * 100) : 50;
+  const malePct = totalDemoVoters ? Math.round((maleCount / totalDemoVoters) * 100) : 50;
+
+  const youthCount = demo?.youth || (isSample ? 205 : 0);
+  const middleCount = demo?.middle || (isSample ? 272 : 0);
+  const seniorCount = demo?.senior || (isSample ? 228 : 0);
+  const youthPct = totalDemoVoters ? Math.round((youthCount / totalDemoVoters) * 100) : 0;
+  const middlePct = totalDemoVoters ? Math.round((middleCount / totalDemoVoters) * 100) : 0;
+  const seniorPct = totalDemoVoters ? Math.round((seniorCount / totalDemoVoters) * 100) : 0;
+
   const boothColumns = [
     { key: 'part_no', label: 'Booth', align: 'right', render: (b) => <span className="cv-num-strong">{b.part_no}</span> },
     { key: 'booth_name', label: 'Polling station', primary: true, render: (b) => <span className="cv-station" style={{ whiteSpace: 'normal' }}>{b.booth_name ? titleCase(b.booth_name) : '—'}</span> },
@@ -111,6 +126,127 @@ export default function CandidateHome() {
         <Kpi label="Largest booth" value={loading ? '…' : largest ? `#${largest.part_no}` : '—'} note={largest ? `${inr(largest.voter_count)} voters` : ''} />
         <Kpi label="Plan" value={state === 'active' && !isSample ? 'PRO' : state === 'verifying' ? 'Verifying' : state === 'sample' ? 'Preview' : 'Not active'} note={state === 'active' && !isSample ? 'full access' : state === 'verifying' ? 'proof under check' : state === 'sample' ? 'booths pending' : 'activate to unlock'} tone={state === 'active' && !isSample ? undefined : 'warn'} />
       </div>
+
+      {/* Crucial Political Insights: Women vs Men Voter Ratio & Age Demographics */}
+      {(demo || isSample || state === 'active') && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, margin: '16px 0' }}>
+          {/* Feature 1: Women vs Men Voter Balance */}
+          <Card title="Women vs Men Voter Balance" meta={isSample ? 'Sample preview' : state === 'unpaid' ? 'Locked · Preview mode' : 'Gender distribution across your booths'}>
+            <div style={{ display: 'grid', gap: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#ec4899', fontWeight: 600 }}>
+                    👩 Female Electors
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#1e293b' }}>
+                    {loading ? '…' : state === 'unpaid' ? '—' : inr(femaleCount)}
+                    <span style={{ fontSize: 13, fontWeight: 500, color: '#64748b', marginLeft: 6 }}>
+                      ({state === 'unpaid' ? '52%' : `${femalePct}%`})
+                    </span>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 13, color: '#2563eb', fontWeight: 600 }}>
+                    👨 Male Electors
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: '#1e293b' }}>
+                    {loading ? '…' : state === 'unpaid' ? '—' : inr(maleCount)}
+                    <span style={{ fontSize: 13, fontWeight: 500, color: '#64748b', marginLeft: 6 }}>
+                      ({state === 'unpaid' ? '48%' : `${malePct}%`})
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {state === 'unpaid' ? (
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '12px', textAlign: 'center' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#92400e', marginBottom: 4 }}>
+                    🔒 Gender Breakdown Locked
+                  </div>
+                  <div style={{ fontSize: 12, color: '#b45309', marginBottom: 8 }}>
+                    Activate your plan to unlock the exact Women vs Men voter count across your {count} assigned booths.
+                  </div>
+                  <Button size="sm" icon={Sparkles} onClick={() => setPay(true)}>Activate Plan to Unlock</Button>
+                </div>
+              ) : (
+                <>
+                  {/* Dual-color visual balance bar */}
+                  <div style={{ width: '100%', height: 12, borderRadius: 6, background: '#e2e8f0', display: 'flex', overflow: 'hidden' }}>
+                    <div style={{ width: `${femalePct}%`, background: '#ec4899', transition: 'width 0.4s ease' }} title={`Female: ${femalePct}%`} />
+                    <div style={{ width: `${malePct}%`, background: '#3b82f6', transition: 'width 0.4s ease' }} title={`Male: ${malePct}%`} />
+                  </div>
+
+                  <div style={{ background: femalePct >= malePct ? '#fdf2f8' : '#eff6ff', border: '1px solid', borderColor: femalePct >= malePct ? '#fbcfe8' : '#bfdbfe', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, color: femalePct >= malePct ? '#9d174d' : '#1e40af' }}>
+                    💡 <strong>Strategic Edge:</strong> {femalePct >= malePct
+                      ? `Women hold the majority in your area (+${inr(Math.abs(femaleCount - maleCount))} votes). Direct your women's wing to focus door-to-door visits on women welfare schemes.`
+                      : `Men hold the majority (+${inr(Math.abs(maleCount - femaleCount))} votes). Balance ground canvassing equally across both demographics.`}
+                  </div>
+                </>
+              )}
+            </div>
+          </Card>
+
+          {/* Feature 2: Age Cohorts (Youth vs Working vs Seniors) */}
+          <Card title="Elector Age Cohorts" meta={state === 'unpaid' ? 'Locked · Preview mode' : 'Key demographic targets for campaign strategy'}>
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center' }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 6px' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#059669', marginBottom: 2 }}>🎓 Youth (18–35)</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>
+                    {loading ? '…' : state === 'unpaid' ? '—' : inr(youthCount)}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>
+                    {state === 'unpaid' ? '34%' : `${youthPct}%`} of voters
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 6px' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#0284c7', marginBottom: 2 }}>💼 Core (36–59)</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>
+                    {loading ? '…' : state === 'unpaid' ? '—' : inr(middleCount)}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>
+                    {state === 'unpaid' ? '48%' : `${middlePct}%`} of voters
+                  </div>
+                </div>
+
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 6px' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#d97706', marginBottom: 2 }}>👴 Seniors (60+)</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>
+                    {loading ? '…' : state === 'unpaid' ? '—' : inr(seniorCount)}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>
+                    {state === 'unpaid' ? '18%' : `${seniorPct}%`} of voters
+                  </div>
+                </div>
+              </div>
+
+              {state === 'unpaid' ? (
+                <div style={{ textAlign: 'center', marginTop: 4 }}>
+                  <Button size="sm" variant="ghost" onClick={() => setPay(true)}>Activate to view voter lists by age</Button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <Link
+                    to="/voters?min_age=18&max_age=35"
+                    className="cv-btn cv-btn--ghost cv-btn--sm"
+                    style={{ flex: 1, fontSize: 11, textAlign: 'center', justifyContent: 'center' }}
+                  >
+                    View Youth Electors →
+                  </Link>
+                  <Link
+                    to="/voters?min_age=60"
+                    className="cv-btn cv-btn--ghost cv-btn--sm"
+                    style={{ flex: 1, fontSize: 11, textAlign: 'center', justifyContent: 'center' }}
+                  >
+                    View Senior Citizens →
+                  </Link>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
 
       <div className="cv-grid-2-1">
         <Card title={isSample ? 'Sample voters' : 'Your booths'} meta={isSample ? '705 fictional records so you can try search and filters' : 'Tap a booth to open its voters'} flush>

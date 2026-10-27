@@ -66,7 +66,19 @@ export async function home(req, res) {
     return res.json({
       success: true, isSample: true,
       account: account(rec, u),
-      sample: { booths: SAMPLE_BOOTHS, voters: SAMPLE_VOTERS },
+      sample: {
+        booths: SAMPLE_BOOTHS,
+        voters: SAMPLE_VOTERS,
+        demographics: {
+          total: SAMPLE_VOTERS,
+          male: 352,
+          female: 353,
+          other: 0,
+          youth: 205,
+          middle: 272,
+          senior: 228,
+        },
+      },
     });
   }
 
@@ -110,6 +122,15 @@ export async function home(req, res) {
 
   let rows = [];
   const db = getVoterDb();
+  const demographics = {
+    total: 0,
+    male: 0,
+    female: 0,
+    other: 0,
+    youth: 0,
+    middle: 0,
+    senior: 0,
+  };
 
   for (const [acNo, bList] of byAssembly.entries()) {
     let assembly = null;
@@ -118,11 +139,36 @@ export async function home(req, res) {
 
     try {
       const coll = db.collection(collectionForAc(acNo));
-      const agg = await coll.aggregate([
-        { $match: { PART_NO: { $in: parts } } },
-        { $group: { _id: '$PART_NO', booth_name: { $first: '$BOOTH_NAME' }, voter_count: { $sum: 1 } } },
-        { $sort: { _id: 1 } },
-      ]).toArray();
+      const [agg, demoAgg] = await Promise.all([
+        coll.aggregate([
+          { $match: { PART_NO: { $in: parts } } },
+          { $group: { _id: '$PART_NO', booth_name: { $first: '$BOOTH_NAME' }, voter_count: { $sum: 1 } } },
+          { $sort: { _id: 1 } },
+        ]).toArray(),
+        coll.aggregate([
+          { $match: { PART_NO: { $in: parts } } },
+          { $group: {
+              _id: null,
+              total: { $sum: 1 },
+              male: { $sum: { $cond: [{ $eq: ['$GENDER', 'Male'] }, 1, 0] } },
+              female: { $sum: { $cond: [{ $eq: ['$GENDER', 'Female'] }, 1, 0] } },
+              other: { $sum: { $cond: [{ $and: [{ $ne: ['$GENDER', 'Male'] }, { $ne: ['$GENDER', 'Female'] }] }, 1, 0] } },
+              youth: { $sum: { $cond: [{ $and: [{ $gte: ['$AGE', 18] }, { $lte: ['$AGE', 35] }] }, 1, 0] } },
+              middle: { $sum: { $cond: [{ $and: [{ $gte: ['$AGE', 36] }, { $lte: ['$AGE', 59] }] }, 1, 0] } },
+              senior: { $sum: { $cond: [{ $gte: ['$AGE', 60] }, 1, 0] } },
+          } },
+        ]).toArray(),
+      ]);
+
+      if (demoAgg[0]) {
+        demographics.total += demoAgg[0].total || 0;
+        demographics.male += demoAgg[0].male || 0;
+        demographics.female += demoAgg[0].female || 0;
+        demographics.other += demoAgg[0].other || 0;
+        demographics.youth += demoAgg[0].youth || 0;
+        demographics.middle += demoAgg[0].middle || 0;
+        demographics.senior += demoAgg[0].senior || 0;
+      }
 
       const aggMap = new Map(agg.map((r) => [r._id, r]));
 
@@ -149,7 +195,7 @@ export async function home(req, res) {
     }
   }
 
-  res.json({ success: true, isSample: false, account: account(rec, u), booths: rows });
+  res.json({ success: true, isSample: false, account: account(rec, u), booths: rows, demographics });
 }
 
 // Deterministic sample voter dataset for Preview Mode (705 records).
