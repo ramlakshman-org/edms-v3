@@ -770,7 +770,51 @@ export async function handleWactoWebhook(req, res) {
 
     // Skip plain text greetings and root menu triggers
     if (msg_.type === 'text') {
-      const low = selected.toLowerCase();
+      const low = selected.toLowerCase().trim();
+      const mobile10 = toMobile10(phone);
+      const db = getAppDb();
+      const existingUser = await db.collection('tbl_user').findOne({ mobile_no: mobile10 });
+
+      // Recognized registered candidate: if they send "Hi", "Hello", "Start", or any greeting,
+      // greet them by name, resend their credentials & login link, and do NOT restart registration questionnaire!
+      if (existingUser?.password_str && (RESTART_WORDS.has(low) || LOGIN_PHRASES.has(low) || low === 'hi' || low === 'hello')) {
+        await db.collection('tbl_wacto_sessions').deleteOne({ phone });
+        const userLang = existingUser.lang || (TAMIL_SCRIPT.test(selected) ? 'ta' : 'en');
+        const loginUrl = process.env.PORTAL_LOGIN_URL || `${process.env.CLIENT_ORIGIN || 'https://tnedms.online'}/login`;
+
+        // 1. Send Welcome Back with Credentials
+        await sendImageWithText(
+          phone,
+          botImage('credentials'),
+          botText('reg_welcome_back', userLang, {
+            name: existingUser.first_name || existingUser.name || mobile10,
+            mobile: mobile10,
+            passcode: existingUser.password_str,
+            login_url: loginUrl,
+          })
+        );
+
+        // 2. If plan is not active, also send payment instructions / QR
+        if (!isPaid(existingUser.paid_status)) {
+          const pay = await getPaymentSettings(db);
+          const boothCount = boothCountOf(existingUser);
+          await sendImageWithText(
+            phone,
+            pay.qr_url,
+            paymentMessage(pay, userLang, {
+              assembly: existingUser.assembly_name || '',
+              boothCount,
+              title: botText('purchase_pay_title', userLang, { booths: boothCount }),
+            })
+          );
+        }
+
+        // 3. Keep CRM conversation in sync
+        await touchLead(db, { mobile: mobile10, name: existingUser.first_name || contactName, source: 'whatsapp' });
+        await markCrmLeadStatus(db, mobile10, 'registered', 'Engaged via WhatsApp — recognized registered candidate');
+        return;
+      }
+
       // WACTO's root keywords restart its flow (language question) — start the backend side over
       // too, so a fresh start is not treated as old taps of an unfinished registration
       if (RESTART_WORDS.has(low)) {

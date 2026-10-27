@@ -328,6 +328,34 @@ export async function register(req, res) {
     await db.collection('tbl_otp').deleteOne({ mobile }).catch(() => {});
     await markLeadRegistered(db, mobile); // Incomplete registrations: this number now has an account
     await markCrmLeadStatus(db, mobile, 'registration_completed', 'Website registration completed'); // keep the CRM pipeline in sync
+
+    // Ensure candidate record is in tbl_crm_conversation with details for telecalling
+    await db.collection('tbl_crm_conversation').updateOne(
+      { clean_mobile: mobile },
+      {
+        $set: {
+          contact_name: fullName,
+          district: b.district || '',
+          assembly: assemblyName || (assemblyId ? String(assemblyId) : ''),
+          position: b.position || '',
+          booth_count: rawBooths.length,
+          lead_status: 'registration_completed',
+          is_registered: true,
+          updated_at: new Date(),
+        },
+        $setOnInsert: {
+          clean_mobile: mobile,
+          source: 'website',
+          assigned_agent_id: null,
+          assigned_agent_name: null,
+          taken: false,
+          unread_count: 0,
+          created_at: new Date(),
+          status_history: [{ status: 'registration_completed', note: 'Website registration completed', by: 'System', at: new Date(), source: 'website' }],
+        },
+      },
+      { upsert: true }
+    );
     await recordWebsiteEvent(db, { mobile, event: 'submit' }).catch(() => {});
     await recordWebsiteEvent(db, { mobile, event: 'complete' }).catch(() => {}); // website journey: submitted + completed
     const lang = b.lang === 'ta' ? 'ta' : 'en';

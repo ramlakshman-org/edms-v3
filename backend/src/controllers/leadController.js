@@ -6,6 +6,7 @@ import { getAppDb } from '../config/db.js';
 import { toObjectId } from '../utils/objectId.js';
 import { escapeRegex } from '../utils/escapeRegex.js';
 import { LEADS_COLL, LEAD_STEPS, LEAD_STATUSES, touchLead, recordWebsiteEvent } from '../services/leads.js';
+import { getActiveAgents } from './whatsappController.js';
 
 const TABS = {
   open: { registered_at: null, status: { $in: ['new', 'contacted'] } },
@@ -68,11 +69,12 @@ export async function update(req, res) {
   try {
     const oid = toObjectId(req.params.id);
     if (!oid) return res.status(400).json({ success: false, message: 'Invalid id.' });
-    const { status, note } = req.body || {};
+    const { status, note, assigned_agent_id } = req.body || {};
     if (status != null && !LEAD_STATUSES.includes(status)) return res.status(422).json({ success: false, message: 'Unknown status.' });
     const text = String(note || '').trim().slice(0, 1000);
-    if (status == null && !text) return res.status(422).json({ success: false, message: 'Nothing to save.' });
-    const coll = getAppDb().collection(LEADS_COLL);
+    if (status == null && !text && assigned_agent_id === undefined) return res.status(422).json({ success: false, message: 'Nothing to save.' });
+    const db = getAppDb();
+    const coll = db.collection(LEADS_COLL);
     const lead = await coll.findOne({ _id: oid });
     if (!lead) return res.status(404).json({ success: false, message: 'Not found.' });
     const at = new Date().toISOString();
@@ -80,6 +82,56 @@ export async function update(req, res) {
     const set = {};
     if (status != null && status !== lead.status) Object.assign(set, { status, status_at: at, status_by: by, history: [...(lead.history || []), { status, from: lead.status, at, by }] });
     if (text) set.notes = [...(lead.notes || []), { text, at, by }];
+
+    if (assigned_agent_id !== undefined) {
+      if (!assigned_agent_id) {
+        set.assigned_agent_id = null;
+        set.assigned_agent_name = null;
+        set.assigned_at = null;
+        set.assigned_by = null;
+        await db.collection('tbl_crm_conversation').updateOne(
+          { clean_mobile: lead.mobile },
+          { $set: { assigned_agent_id: null, assigned_agent_name: null, updated_at: new Date() } }
+        ).catch(() => {});
+      } else {
+        const agents = await getActiveAgents(db);
+        const agent = agents.find((a) => a.id === String(assigned_agent_id));
+        if (agent) {
+          set.assigned_agent_id = agent.id;
+          set.assigned_agent_name = agent.name;
+          set.assigned_at = at;
+          set.assigned_by = by;
+          const now = new Date();
+          const entry = { status: 'assigned', note: `Assigned → ${agent.name}`, by, at: now, source: 'manual' };
+          await db.collection('tbl_crm_conversation').updateOne(
+            { clean_mobile: lead.mobile },
+            {
+              $set: {
+                assigned_agent_id: agent.id,
+                assigned_agent_name: agent.name,
+                assigned_at: now,
+                assigned_by: by,
+                taken: false,
+                updated_at: now,
+              },
+              $setOnInsert: {
+                clean_mobile: lead.mobile,
+                source: lead.sources?.[0] || 'website',
+                lead_status: 'new',
+                is_registered: false,
+                taken: false,
+                unread_count: 0,
+                created_at: now,
+                contact_name: lead.web_name || lead.wa_name || `Lead ${lead.mobile.slice(-4)}`,
+              },
+              $push: { assignment_history: entry },
+            },
+            { upsert: true }
+          ).catch(() => {});
+        }
+      }
+    }
+
     if (Object.keys(set).length) await coll.updateOne({ _id: oid }, { $set: set });
     res.json({ success: true, lead: { ...lead, ...set } });
   } catch (e) {

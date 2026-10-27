@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Phone, MessageCircle, StickyNote, Search, X, Download } from 'lucide-react';
+import { Phone, MessageCircle, StickyNote, Search, X, Download, Shuffle } from 'lucide-react';
 import api from '../../api/client.js';
 import { PageHeader, Card, Pill, Segmented, inr } from '../../civic/kit.jsx';
 import { DataTable, Pager, Select, Button, RowMenu, Modal, Textarea, Field, csvOf, download, fmtDate, fmtDateTime, waLink } from '../../civic/ui.jsx';
@@ -24,9 +24,17 @@ export default function Leads({ isTeam = false }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState('');
+  const [distributing, setDistributing] = useState(false);
+  const [agents, setAgents] = useState([]);
   const [noteFor, setNoteFor] = useState(null);
   const [note, setNote] = useState('');
   const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    api.get('/crm/agents')
+      .then(({ data: d }) => { if (d.success && Array.isArray(d.agents)) setAgents(d.agents); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => { setDraft(search); }, [search]);
   useEffect(() => {
@@ -92,6 +100,21 @@ export default function Leads({ isTeam = false }) {
           </Select>
         </span>
       )) },
+    { key: 'assigned_agent', label: 'Assigned Telecaller', wrap: 160, render: (r) => (
+      <span onClick={(e) => e.stopPropagation()}>
+        <Select
+          value={r.assigned_agent_id || ''}
+          disabled={saving === r._id}
+          onChange={(e) => save(r, { assigned_agent_id: e.target.value || null })}
+          aria-label={`Assigned telecaller for ${r.name || r.mobile}`}
+        >
+          <option value="">Unassigned</option>
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </Select>
+      </span>
+    ) },
     { key: 'note', label: 'Last note', medium: false, mobile: false, wrap: 160, render: (r) => {
       const last = r.notes?.[r.notes.length - 1];
       return last ? <div className="cv-two"><span>{last.text.length > 70 ? `${last.text.slice(0, 70)}…` : last.text}</span><span className="cv-muted">{fmtDate(last.at)}{r.notes.length > 1 ? ` · ${r.notes.length} notes` : ''}</span></div> : <span className="cv-td-quiet">—</span>;
@@ -105,10 +128,35 @@ export default function Leads({ isTeam = false }) {
     ) },
   ];
 
+  const handleDistribute = async () => {
+    if (!window.confirm('Distribute all unassigned leads across active telecallers in round-robin order?')) return;
+    setDistributing(true);
+    setErr('');
+    try {
+      const { data: res } = await api.post('/crm/distribute-leads');
+      alert(res.message || 'Leads distributed successfully.');
+      setTick((t) => t + 1);
+    } catch (e) {
+      setErr(e.response?.data?.message || 'Failed to distribute leads.');
+    } finally {
+      setDistributing(false);
+    }
+  };
+
   const exportCsv = async () => {
     const { data: d } = await api.get('/leads', { params: { tab, source, search, page: 1, pageSize: 200 } });
-    const rows = (d.rows || []).map((r) => ({ name: r.name, mobile: r.mobile, source: (r.sources || []).join('+'), how_far: r.step_label, status: r.registered_at ? 'Registered' : STATUS[r.status], first_contact: r.first_seen, last_active: r.last_seen, last_note: r.notes?.[r.notes.length - 1]?.text || '' }));
-    download(`incomplete-registrations-${tab}.csv`, csvOf(rows, ['name', 'mobile', 'source', 'how_far', 'status', 'first_contact', 'last_active', 'last_note']));
+    const rows = (d.rows || []).map((r) => ({
+      name: r.name,
+      mobile: r.mobile,
+      source: (r.sources || []).join('+'),
+      how_far: r.step_label,
+      assigned_to: r.assigned_agent_name || 'Unassigned',
+      status: r.registered_at ? 'Registered' : STATUS[r.status],
+      first_contact: r.first_seen,
+      last_active: r.last_seen,
+      last_note: r.notes?.[r.notes.length - 1]?.text || ''
+    }));
+    download(`incomplete-registrations-${tab}.csv`, csvOf(rows, ['name', 'mobile', 'source', 'how_far', 'assigned_to', 'status', 'first_contact', 'last_active', 'last_note']));
   };
   const c = data.counts || {};
 
@@ -118,7 +166,16 @@ export default function Leads({ isTeam = false }) {
         eyebrow={isTeam ? 'Follow-up' : undefined}
         title="Incomplete registrations"
         subtitle={loading && !data.rows.length ? 'Loading…' : `${inr(c.open || 0)} ${c.open === 1 ? 'person' : 'people'} to follow up · messaged the WhatsApp bot or started the website form but did not finish`}
-        actions={<Button variant="ghost" icon={Download} onClick={exportCsv}>Export CSV</Button>}
+        actions={
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {!isTeam && (
+              <Button variant="primary" icon={Shuffle} onClick={handleDistribute} disabled={distributing}>
+                {distributing ? 'Distributing…' : 'Distribute (Round-Robin)'}
+              </Button>
+            )}
+            <Button variant="ghost" icon={Download} onClick={exportCsv}>Export CSV</Button>
+          </div>
+        }
       />
       <Card flush>
         <div className="cv-filters">

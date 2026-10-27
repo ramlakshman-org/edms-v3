@@ -893,7 +893,20 @@ export async function runDistribute(db, { reassignAll = false } = {}) {
       },
     };
   });
-  if (ops.length) await db.collection('tbl_crm_conversation').bulkWrite(ops, { ordered: false });
+  if (ops.length) {
+    await db.collection('tbl_crm_conversation').bulkWrite(ops, { ordered: false });
+    // Also sync assignment into tbl_leads
+    const leadOps = convos.map((c, i) => {
+      const agent = agents[(idx - ops.length + i) % agents.length];
+      return {
+        updateOne: {
+          filter: { mobile: c.clean_mobile },
+          update: { $set: { assigned_agent_id: agent.id, assigned_agent_name: agent.name, updated_at: now } },
+        },
+      };
+    });
+    try { await db.collection('tbl_leads').bulkWrite(leadOps, { ordered: false }); } catch { /* best effort */ }
+  }
   const lastAgent = agents[(idx - 1 + agents.length) % agents.length];
   await db.collection('tbl_crm_settings').updateOne({ _id: 'round_robin' }, { $set: { last_agent_id: lastAgent.id, updated_at: now } }, { upsert: true });
   return { assigned: ops.length, agents: agents.length, per_agent: perAgent };
@@ -940,15 +953,45 @@ export async function assignConversation(req, res) {
 
     const now = new Date();
     const entry = { status: 'assigned', note: `Assigned → ${agent.name}`, by: req.user?.name || 'Admin', at: now, source: 'manual' };
-    const result = await db.collection('tbl_crm_conversation').updateOne(
+
+    // Fetch contact info if not yet in tbl_crm_conversation
+    const existingLead = await db.collection('tbl_leads').findOne({ mobile: cleanMobile });
+    const existingUser = await db.collection('tbl_user').findOne({ mobile_no: cleanMobile });
+    const contactName = existingUser?.first_name || existingUser?.name || existingLead?.web_name || existingLead?.wa_name || `Lead ${cleanMobile.slice(-4)}`;
+
+    await db.collection('tbl_crm_conversation').updateOne(
       { clean_mobile: cleanMobile },
       {
-        $set: { assigned_agent_id: agent.id, assigned_agent_name: agent.name, assigned_at: now, assigned_by: 'manual', taken: false, updated_at: now },
+        $set: {
+          assigned_agent_id: agent.id,
+          assigned_agent_name: agent.name,
+          assigned_at: now,
+          assigned_by: 'manual',
+          taken: false,
+          updated_at: now,
+          contact_name: contactName,
+        },
+        $setOnInsert: {
+          clean_mobile: cleanMobile,
+          source: existingUser ? 'website' : (existingLead?.sources?.[0] || 'website'),
+          lead_status: existingUser ? 'registered' : 'new',
+          is_registered: !!existingUser,
+          taken: false,
+          unread_count: 0,
+          created_at: now,
+        },
         $push: { assignment_history: entry },
       },
+      { upsert: true }
     );
-    if (!result.matchedCount) return res.status(404).json({ success: false, message: 'Conversation not found.' });
-    return res.json({ success: true, message: `Conversation assigned to ${agent.name}.` });
+
+    // Also sync into tbl_leads
+    await db.collection('tbl_leads').updateOne(
+      { mobile: cleanMobile },
+      { $set: { assigned_agent_id: agent.id, assigned_agent_name: agent.name, updated_at: now.toISOString() } }
+    ).catch(() => {});
+
+    return res.json({ success: true, message: `Lead assigned to ${agent.name}.`, agent });
   } catch (err) {
     console.error('[CRM assignConversation Error]:', err);
     return res.status(500).json({ success: false, message: err.message || 'Failed to assign conversation.' });

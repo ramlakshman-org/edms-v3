@@ -42,6 +42,7 @@ export async function touchLead(db, { mobile, name = '', source, step = 'contact
     const coll = db.collection(LEADS_COLL);
     const now = at.toISOString();
     const lead = await coll.findOne({ mobile: m });
+    let resultRow = null;
     if (!lead) {
       if (await isRegistered(db, m)) return null; // already has an account: not a lead
       const row = {
@@ -49,17 +50,55 @@ export async function touchLead(db, { mobile, name = '', source, step = 'contact
         sources: [source], first_seen: now, last_seen: now, step, step_rank: LEAD_STEPS[step].rank, step_at: now,
         status: 'new', status_at: null, status_by: '', notes: [], history: [], registered_at: null,
       };
-      try { await coll.insertOne(row); } catch (e) { if (e?.code !== 11000) throw e; return touchLead(db, { mobile, name, source, step, at }); }
-      return row;
+      try { await coll.insertOne(row); resultRow = row; } catch (e) { if (e?.code !== 11000) throw e; return touchLead(db, { mobile, name, source, step, at }); }
+    } else {
+      const set = { last_seen: now };
+      if (!lead.sources?.includes(source)) set.sources = [...(lead.sources || []), source];
+      if (name && source === 'whatsapp' && name !== lead.wa_name) set.wa_name = String(name);
+      if (name && source === 'website' && name !== lead.web_name) set.web_name = String(name);
+      if (LEAD_STEPS[step].rank > (lead.step_rank ?? -1)) Object.assign(set, { step, step_rank: LEAD_STEPS[step].rank, step_at: now });
+      if (!lead.registered_at && await isRegistered(db, m)) set.registered_at = now;
+      await coll.updateOne({ mobile: m }, { $set: set });
+      resultRow = { ...lead, ...set };
     }
-    const set = { last_seen: now };
-    if (!lead.sources?.includes(source)) set.sources = [...(lead.sources || []), source];
-    if (name && source === 'whatsapp' && name !== lead.wa_name) set.wa_name = String(name);
-    if (name && source === 'website' && name !== lead.web_name) set.web_name = String(name);
-    if (LEAD_STEPS[step].rank > (lead.step_rank ?? -1)) Object.assign(set, { step, step_rank: LEAD_STEPS[step].rank, step_at: now });
-    if (!lead.registered_at && await isRegistered(db, m)) set.registered_at = now;
-    await coll.updateOne({ mobile: m }, { $set: set });
-    return { ...lead, ...set };
+
+    // Always bridge into tbl_crm_conversation so telecallers see incomplete leads immediately
+    try {
+      const stepLabel = LEAD_STEPS[step]?.label || step;
+      const contactName = String(name || resultRow?.web_name || resultRow?.wa_name || '').trim() || `Lead ${m.slice(-4)}`;
+      await db.collection('tbl_crm_conversation').updateOne(
+        { clean_mobile: m },
+        {
+          $setOnInsert: {
+            clean_mobile: m,
+            source: source || 'website',
+            lead_status: 'new',
+            assigned_agent_id: null,
+            assigned_agent_name: null,
+            taken: false,
+            unread_count: 0,
+            last_message: `Lead captured via ${source} (${stepLabel})`,
+            last_message_at: at,
+            window_active: true,
+            window_hours: 24,
+            created_at: at,
+            status_history: [{ status: 'new', note: `Incomplete lead created from ${source} (${stepLabel})`, by: 'System', at, source }],
+          },
+          $set: {
+            contact_name: contactName,
+            step,
+            step_label: stepLabel,
+            last_inbound_at: at,
+            updated_at: at,
+          },
+        },
+        { upsert: true }
+      );
+    } catch (e) {
+      console.error('[touchLead crm sync error]:', e);
+    }
+
+    return resultRow;
   } catch (e) {
     console.warn(`[leads] not recorded for ******${ten(mobile).slice(-4)}: ${e.message}`);
     return null;
@@ -109,7 +148,16 @@ export async function markCrmLeadStatus(db, mobile, status, note = '') {
       {
         $set: { lead_status: status, updated_at: new Date() },
         $push: { status_history: { status, note, by: 'System', at: new Date(), source: 'auto' } },
+        $setOnInsert: {
+          clean_mobile: m,
+          assigned_agent_id: null,
+          assigned_agent_name: null,
+          taken: false,
+          unread_count: 0,
+          created_at: new Date(),
+        },
       },
+      { upsert: true }
     );
   } catch (e) {
     console.warn(`[leads] crm status sync failed for ******${ten(mobile).slice(-4)}: ${e.message}`);
