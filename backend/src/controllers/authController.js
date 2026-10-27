@@ -67,7 +67,7 @@ async function clearLoginFails(db, id) {
 // Mirrors LoginController@submitLogin: match tbl_user by mobile_no + password_str,
 // then route by user_group_id. Keeps an admin/admin bootstrap for first use.
 export async function login(req, res) {
-  const username = (req.body?.username ?? req.body?.email ?? '').toString().trim();
+  const username = (req.body?.username ?? req.body?.mobile_no ?? req.body?.mobile ?? req.body?.email ?? '').toString().trim();
   const password = (req.body?.password ?? '').toString().trim();
   if (!username || !password) {
     return res.status(400).json({ success: false, message: 'Username and password are required.' });

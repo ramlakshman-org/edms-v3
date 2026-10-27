@@ -519,6 +519,11 @@ async function seed() {
   await voterDb.collection('ass_1').insertMany(sampleVoters);
   await voterDb.collection('ass_33').insertMany(sampleVoters.map(v => ({ ...v, ASSEMBLY_NO: 33, ASSEMBLY_NAME: 'Salem (North)', DISTRICT: 'Salem' })));
 
+  await voterDb.collection('ass_1').createIndex({ PART_NO: 1, SECTION_NO: 1 });
+  await voterDb.collection('ass_1').createIndex({ EPIC_NO: 1 });
+  await voterDb.collection('ass_33').createIndex({ PART_NO: 1, SECTION_NO: 1 });
+  await voterDb.collection('ass_33').createIndex({ EPIC_NO: 1 });
+
   console.log('[seed] Local databases populated successfully!');
   await client.close();
 }
