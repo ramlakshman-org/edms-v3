@@ -119,7 +119,6 @@ export async function update(req, res) {
                 source: lead.sources?.[0] || 'website',
                 lead_status: 'new',
                 is_registered: false,
-                taken: false,
                 unread_count: 0,
                 created_at: now,
                 contact_name: lead.web_name || lead.wa_name || `Lead ${lead.mobile.slice(-4)}`,
@@ -127,7 +126,9 @@ export async function update(req, res) {
               $push: { assignment_history: entry },
             },
             { upsert: true }
-          ).catch(() => {});
+          ).catch((e) => {
+            console.error('[leadController update crm assign error]:', e);
+          });
         }
       }
     }

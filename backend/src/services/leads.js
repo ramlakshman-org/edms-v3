@@ -128,8 +128,31 @@ export async function recordWebsiteEvent(db, { mobile, event, at = new Date() })
 export async function markLeadRegistered(db, mobile) {
   try {
     const m = ten(mobile);
+    const now = new Date().toISOString();
     const lead = await db.collection(LEADS_COLL).findOne({ mobile: m });
-    if (lead && !lead.registered_at) await db.collection(LEADS_COLL).updateOne({ mobile: m }, { $set: { registered_at: new Date().toISOString() } });
+    if (lead) {
+      if (!lead.registered_at) await db.collection(LEADS_COLL).updateOne({ mobile: m }, { $set: { registered_at: now } });
+    } else {
+      const user = await db.collection('tbl_user').findOne({ mobile_no: m });
+      const name = user ? [user.first_name, user.last_name].filter(Boolean).join(' ') : `Candidate ${m.slice(-4)}`;
+      await db.collection(LEADS_COLL).insertOne({
+        mobile: m,
+        wa_name: '',
+        web_name: name,
+        sources: ['website'],
+        first_seen: now,
+        last_seen: now,
+        step: 'booth_numbers',
+        step_rank: 7,
+        step_at: now,
+        status: 'registered',
+        status_at: now,
+        status_by: 'system',
+        notes: [],
+        history: [],
+        registered_at: now,
+      });
+    }
   } catch (e) {
     console.warn(`[leads] registered mark failed for ******${ten(mobile).slice(-4)}: ${e.message}`);
   }

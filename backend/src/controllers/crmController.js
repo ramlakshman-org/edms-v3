@@ -976,7 +976,6 @@ export async function assignConversation(req, res) {
           source: existingUser ? 'website' : (existingLead?.sources?.[0] || 'website'),
           lead_status: existingUser ? 'registered' : 'new',
           is_registered: !!existingUser,
-          taken: false,
           unread_count: 0,
           created_at: now,
         },
