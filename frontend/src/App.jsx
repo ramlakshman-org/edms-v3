@@ -146,11 +146,11 @@ export default function App() {
         <Route path="flow-simulator" element={<RequireRole allowedGroups={[1]}><FlowSimulator /></RequireRole>} />
         <Route path="whatsapp-features" element={<RequireRole allowedGroups={[1]}><WhatsAppFeatures /></RequireRole>} />
 
-        {/* MLA / Assembly Routes (Group 3 & Admin) — and candidates (6, 11) since Round 1, 2026-10-14: the bigger picture */}
-        <Route path="assembly-details" element={<RequireRole allowedGroups={[1, 3, 6, 11]}><Analytics /></RequireRole>} />
-        <Route path="assembly-analytics" element={<RequireRole allowedGroups={[1, 3, 6, 11]}><Analytics /></RequireRole>} />
-        <Route path="candidate-briefing" element={<RequireRole allowedGroups={[1, 3, 6, 11]}><HtmlReport docKey="candidate-briefing" title="Candidate Briefing" /></RequireRole>} />
-        <Route path="field-operations" element={<RequireRole allowedGroups={[1, 3, 6, 11]}><HtmlReport docKey="field-operations" title="Field Operations Manual" /></RequireRole>} />
+        {/* MLA / Assembly Routes (Group 3 & Super Admin) */}
+        <Route path="assembly-details" element={<RequireRole allowedGroups={[1, 3]}><Analytics /></RequireRole>} />
+        <Route path="assembly-analytics" element={<RequireRole allowedGroups={[1, 3]}><Analytics /></RequireRole>} />
+        <Route path="candidate-briefing" element={<RequireRole allowedGroups={[1, 3]}><HtmlReport docKey="candidate-briefing" title="Candidate Briefing" /></RequireRole>} />
+        <Route path="field-operations" element={<RequireRole allowedGroups={[1, 3]}><HtmlReport docKey="field-operations" title="Field Operations Manual" /></RequireRole>} />
         <Route path="booth-report" element={<RequireRole allowedGroups={[1, 3, 6, 11]}><BoothReport /></RequireRole>} />
 
         {/* Booth Agent Routes (Group 4, 11 & Admin) */}

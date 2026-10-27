@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, MapPin, Megaphone, BarChart3, Crown, Hourglass, Lock, Sparkles, CircleAlert, Info, Phone, PieChart, TrendingUp, ArrowRight } from 'lucide-react';
+import { Users, MapPin, Megaphone, BarChart3, Crown, Hourglass, Lock, Sparkles, CircleAlert, Info, Phone, Map, TrendingUp, ArrowRight } from 'lucide-react';
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import PurchaseModal from '../../components/PurchaseModal.jsx';
@@ -275,7 +275,7 @@ export default function CandidateHome() {
               <Link className="cv-btn" to="/voters"><Users size={15} /> Open my voters</Link>
               <Link className="cv-btn cv-btn--ghost" to="/broadcast"><Megaphone size={15} /> SMS · Audio · WhatsApp broadcast</Link>
               <Link className="cv-btn cv-btn--ghost" to="/performance-report"><BarChart3 size={15} /> Performance report</Link>
-              <Link className="cv-btn cv-btn--ghost" to="/assembly-analytics"><PieChart size={15} /> Assembly analytics &amp; briefing</Link>
+              <Link className="cv-btn cv-btn--ghost" to="/booth-report"><Map size={15} /> Booth report</Link>
             </div>
           </Card>
           {byAssembly.some((a) => a.value > 0) && <Card title="Voters by assembly"><BarList items={byAssembly} /></Card>}

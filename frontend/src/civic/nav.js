@@ -109,6 +109,7 @@ export const CANDIDATE_NAV = [
       { to: '/candidate', label: 'Home', icon: Home },
       { to: '/voters', label: 'My voters', icon: Users },
       { to: '/performance-report', label: 'Performance report', icon: BarChart3 },
+      { to: '/booth-report', label: 'Booth report', icon: Map },
     ],
   },
   {
@@ -116,18 +117,6 @@ export const CANDIDATE_NAV = [
     items: [
       { to: '/broadcast', label: 'Broadcast request', icon: Megaphone },
       { to: '/broadcast/reports', label: 'Broadcast reports', icon: FileText },
-    ],
-  },
-  // Round 1 (Ram, 2026-10-14): the four intelligence pages open to candidates — the bigger picture their
-  // ward sits in. Analytics and the two documents are free to every registered candidate; booth report
-  // numbers stay behind the plan (C13).
-  {
-    section: 'Bigger picture',
-    items: [
-      { to: '/assembly-analytics', label: 'Assembly analytics', icon: PieChart },
-      { to: '/booth-report', label: 'Booth report', icon: Map },
-      { to: '/candidate-briefing', label: 'Candidate briefing', icon: BookOpen },
-      { to: '/field-operations', label: 'Field operations', icon: FileText },
     ],
   },
 ];

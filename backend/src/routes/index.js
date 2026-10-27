@@ -207,10 +207,11 @@ r.put('/payments/settings', adminOnly, payments.updateSettings);
 // previously these had no role gate, so any logged-in user (incl. telecallers) could
 // pull booth/analytics report data directly.
 const reportAccess = requireRole(ROLES.MLA, ROLES.WARD, ROLES.BOOTH_ALT);
+const mlaOrAdmin = requireRole(ROLES.MLA);
 r.get('/reports/booth', reportAccess, reports.boothReport);
 r.get('/reports/documents', reportAccess, reports.documents);
 r.get('/reports/booth-report-list', reportAccess, reports.boothReportList);
-r.get('/reports/assembly-analytics', reportAccess, reports.assemblyAnalyticsReport);
+r.get('/reports/assembly-analytics', mlaOrAdmin, reports.assemblyAnalyticsReport);
 
 // Phase 5 — Mobile-app CMS (generic CRUD over 13 content collections)
 r.get('/mobileapp/types', cms.types);
