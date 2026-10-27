@@ -239,17 +239,44 @@ function PostCallModal({ postCall, onClose }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
+  // 1-Click WhatsApp Drop
+  const isRegistered = !!(postCall?.contact?.is_registered);
+  const [sendWa, setSendWa] = useState(true);
+
+  // Callback scheduling
+  const [callbackOffset, setCallbackOffset] = useState('3h'); // '1h' | '3h' | 'today_evening' | 'tomorrow_morning'
+
   useEffect(() => {
     if (postCall) {
-      setSelectedOutcome(postCall.wasAnswered ? '' : 'not_answered');
+      const def = postCall.wasAnswered ? '' : 'not_answered';
+      setSelectedOutcome(def);
       setNote('');
       setErr('');
+      setSendWa(postCall.wasAnswered);
     }
   }, [postCall?.number]);
 
   if (!postCall) return null;
 
   const phone = String(postCall.number || '').replace(/\D/g, '').slice(-10);
+
+  const getCallbackDate = () => {
+    const now = new Date();
+    if (callbackOffset === '1h') return new Date(now.getTime() + 1 * 3600 * 1000);
+    if (callbackOffset === '3h') return new Date(now.getTime() + 3 * 3600 * 1000);
+    if (callbackOffset === 'today_evening') {
+      const d = new Date(now);
+      d.setHours(18, 0, 0, 0);
+      return d.getTime() > now.getTime() ? d : new Date(now.getTime() + 2 * 3600 * 1000);
+    }
+    if (callbackOffset === 'tomorrow_morning') {
+      const d = new Date(now);
+      d.setDate(d.getDate() + 1);
+      d.setHours(10, 0, 0, 0);
+      return d;
+    }
+    return new Date(now.getTime() + 3 * 3600 * 1000);
+  };
 
   const save = () => {
     if (!selectedOutcome) {
@@ -258,9 +285,15 @@ function PostCallModal({ postCall, onClose }) {
     }
     setSaving(true);
     setErr('');
+
+    const cbDate = selectedOutcome === 'call_back' ? getCallbackDate() : undefined;
+
     api.post(`/crm/conversations/${phone}/lead-status`, {
       lead_status: selectedOutcome,
       note: note.trim() || undefined,
+      send_whatsapp: sendWa,
+      whatsapp_type: isRegistered ? 'pro_pitch' : 'incomplete_guide',
+      callback_at: cbDate ? cbDate.toISOString() : undefined,
     })
       .then(() => {
         window.dispatchEvent(new CustomEvent('crm-lead-updated', { detail: { phone } }));
@@ -271,13 +304,18 @@ function PostCallModal({ postCall, onClose }) {
   };
 
   return (
-    <Modal open={true} title="Call Ended · Mandatory Disposition" onClose={() => {}} width={500}>
+    <Modal open={true} title="Call Ended · Mandatory Disposition" onClose={() => {}} width={520}>
       <div style={{ display: 'grid', gap: 14 }}>
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px' }}>
-          <div style={{ fontWeight: 600, fontSize: 15, color: '#1e293b' }}>
-            {postCall.name || `Candidate ${phone.slice(-4)}`}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontWeight: 600, fontSize: 15, color: '#1e293b' }}>
+              {postCall.name || `Candidate ${phone.slice(-4)}`}
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: isRegistered ? '#dcfce7' : '#fef3c7', color: isRegistered ? '#166534' : '#92400e' }}>
+              {isRegistered ? 'Registered User' : 'Incomplete Registration'}
+            </span>
           </div>
-          <div style={{ fontSize: 13, color: '#64748b', marginTop: 3, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ fontSize: 13, color: '#64748b', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ fontWeight: 500 }}>{phone}</span>
             <span>·</span>
             <span>{postCall.wasAnswered ? `${postCall.duration}s talk time` : 'Not answered / Missed'}</span>
@@ -310,7 +348,11 @@ function PostCallModal({ postCall, onClose }) {
                     boxShadow: isSelected ? '0 2px 4px rgba(37,99,235,0.2)' : 'none',
                     transition: 'all 0.15s ease',
                   }}
-                  onClick={() => { setSelectedOutcome(k); setErr(''); }}
+                  onClick={() => {
+                    setSelectedOutcome(k);
+                    setErr('');
+                    if (['interested', 'call_back', 'converted'].includes(k)) setSendWa(true);
+                  }}
                 >
                   <span className="cv-pill-dot" />
                   {m.label}
@@ -318,6 +360,74 @@ function PostCallModal({ postCall, onClose }) {
               );
             })}
           </div>
+        </div>
+
+        {/* Dynamic Callback Time Picker */}
+        {selectedOutcome === 'call_back' && (
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 12px' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#1e40af', marginBottom: 6 }}>
+              ⏰ When should we re-queue this lead?
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[
+                { id: '1h', label: 'In 1 Hour' },
+                { id: '3h', label: 'In 3 Hours' },
+                { id: 'today_evening', label: 'Today 6:00 PM' },
+                { id: 'tomorrow_morning', label: 'Tomorrow 10:00 AM' },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setCallbackOffset(t.id)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    borderRadius: 6,
+                    border: '1px solid',
+                    borderColor: callbackOffset === t.id ? '#2563eb' : '#cbd5e1',
+                    background: callbackOffset === t.id ? '#2563eb' : '#fff',
+                    color: callbackOffset === t.id ? '#fff' : '#334155',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Auto-Snooze Alert for Missed Calls */}
+        {(selectedOutcome === 'not_answered' || selectedOutcome === 'switch_off') && (
+          <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#92400e', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>⏳</span>
+            <span>
+              <strong>Auto-Snooze Active:</strong> This lead will be automatically snoozed for 3 hours and re-queued at the top of your dialer for Retry #2. (Auto-retires after 3 strikes).
+            </span>
+          </div>
+        )}
+
+        {/* Task 1: 1-Click WhatsApp Follow-up Drop */}
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px' }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={sendWa}
+              onChange={(e) => setSendWa(e.target.checked)}
+              style={{ marginTop: 3, accentColor: '#16a34a', width: 16, height: 16 }}
+            />
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: '#166534' }}>
+                📱 Send Instant WhatsApp Follow-up Message
+              </div>
+              <div style={{ fontSize: 12, color: '#15803d', marginTop: 2 }}>
+                {isRegistered
+                  ? 'Sends Candidate Login Link + Pro Tier Benefits + UPI QR payment info.'
+                  : 'Sends 1-Click Registration Link + Booth Selection Guide to finish setup.'}
+              </div>
+            </div>
+          </label>
         </div>
 
         <Field label="Call Note (optional)">
@@ -332,7 +442,7 @@ function PostCallModal({ postCall, onClose }) {
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <Button onClick={save} disabled={saving || !selectedOutcome}>
-            {saving ? 'Saving…' : 'Save Outcome & Complete Call'}
+            {saving ? 'Saving…' : sendWa ? 'Save & Send WhatsApp' : 'Save Outcome & Complete Call'}
           </Button>
         </div>
       </div>

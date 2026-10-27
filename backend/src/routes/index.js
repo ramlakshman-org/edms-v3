@@ -121,6 +121,8 @@ r.get('/crm/recordings', crmAccess, telecmi.getRecording); // stream a TeleCMI c
 r.post('/crm/sync-recordings', crmAccess, crm.syncTelecmiRecordings); // import real TeleCMI call logs + recordings (telecaller: own; admin: team)
 r.get('/crm/team-stats', crmAccess, crm.teamStats);
 r.get('/crm/team-report', crmAccess, crm.teamReport);
+r.get('/crm/admin/daily-digest', adminOnly, crm.getDailyDigest);
+r.post('/crm/admin/daily-digest/send', adminOnly, crm.sendDailyDigestNow);
 
 // WhatsApp message templates used by the CRM inbox when the 24h window is closed (Super Admin + telecallers)
 r.get('/crm/templates', crmAccess, templates.list);

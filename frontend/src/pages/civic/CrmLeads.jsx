@@ -26,6 +26,8 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  BarChart3,
+  Send,
 } from 'lucide-react';
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -76,6 +78,16 @@ export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(null); // selected conversation (drawer)
 
+  // Task 2: Auto-snooze and actionable queue view
+  const [hideSnoozed, setHideSnoozed] = useState(true);
+
+  // Task 3: 8:00 PM Daily Performance Digest
+  const [digestOpen, setDigestOpen] = useState(false);
+  const [digestLoading, setDigestLoading] = useState(false);
+  const [digestData, setDigestData] = useState(null);
+  const [digestPhone, setDigestPhone] = useState('');
+  const [digestStatus, setDigestStatus] = useState('');
+
   const [canClaim, setCanClaim] = useState(false);
   useEffect(() => { if (isAdmin) api.get('/crm/agents').then(({ data }) => setAgents(data.agents || [])).catch(() => {}); }, [isAdmin]);
   useEffect(() => { api.get('/crm/settings').then(({ data }) => setCanClaim(!!data.config?.claim_unassigned)).catch(() => {}); }, []);
@@ -103,18 +115,32 @@ export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace
   const incompleteCount = useMemo(() => rows.filter((r) => !r.is_registered).length, [rows]);
   const registeredCount = useMemo(() => rows.filter((r) => r.is_registered).length, [rows]);
   const paidCount = useMemo(() => rows.filter((r) => r.is_pro).length, [rows]);
+  const snoozedCount = useMemo(() => rows.filter((r) => r.is_snoozed).length, [rows]);
 
-  // Client-side queue filter
-  const view = useMemo(() => rows.filter((r) => {
-    if (activeQueue === 'incomplete') return !r.is_registered;
-    if (activeQueue === 'registered') return r.is_registered;
-    if (activeQueue === 'paid') {
-      if (paidTab === 'received') return r.is_pro;
-      if (paidTab === 'interested') return r.lead_status === 'interested';
+  // Client-side queue filter + Snooze hiding + Priority Sorting
+  const view = useMemo(() => {
+    let list = rows.filter((r) => {
+      if (activeQueue === 'incomplete') return !r.is_registered;
+      if (activeQueue === 'registered') return r.is_registered;
+      if (activeQueue === 'paid') {
+        if (paidTab === 'received') return r.is_pro;
+        if (paidTab === 'interested') return r.lead_status === 'interested';
+        return true;
+      }
       return true;
+    });
+
+    if (hideSnoozed) {
+      list = list.filter((r) => !r.is_snoozed);
     }
-    return true;
-  }), [rows, activeQueue, paidTab]);
+
+    // High-leverage sorting: Leads that are DUE (scheduled callback or retry due) float to the top
+    return list.slice().sort((a, b) => {
+      if (a.is_due && !b.is_due) return -1;
+      if (!a.is_due && b.is_due) return 1;
+      return 0;
+    });
+  }, [rows, activeQueue, paidTab, hideSnoozed]);
 
   const setQueue = (q) => {
     setPage(1);
@@ -176,7 +202,32 @@ export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace
       label: 'Lead status',
       render: (r) => {
         const m = statusMeta(r.lead_status);
-        return <Pill tone={m.tone} dot>{m.label}</Pill>;
+        const attempts = Number(r.call_attempts) || 0;
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+            <Pill tone={m.tone} dot>{m.label}</Pill>
+            {r.is_due && r.lead_status === 'call_back' && (
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#1d4ed8', background: '#dbeafe', padding: '1px 6px', borderRadius: 4 }}>
+                ⏰ Callback Due Now
+              </span>
+            )}
+            {r.is_due && attempts > 0 && ['not_answered', 'switch_off'].includes(r.lead_status) && (
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309', background: '#fef3c7', padding: '1px 6px', borderRadius: 4 }}>
+                🔄 Retry #{attempts + 1} Due
+              </span>
+            )}
+            {r.is_snoozed && (
+              <span style={{ fontSize: 11, color: '#64748b', background: '#f1f5f9', padding: '1px 6px', borderRadius: 4 }}>
+                ⏳ Snoozed until {new Date(r.snooze_until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+            {r.archived && (
+              <span style={{ fontSize: 11, color: '#b91c1c', background: '#fee2e2', padding: '1px 6px', borderRadius: 4 }}>
+                🚫 3 Strikes (Archived)
+              </span>
+            )}
+          </div>
+        );
       },
     },
     {
@@ -376,10 +427,28 @@ export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace
             <Button variant="ghost" icon={RefreshCw} onClick={load} disabled={loading}>
               Refresh
             </Button>
+
             {isAdmin && (
-              <Button variant="ghost" icon={Shuffle} onClick={distribute} disabled={busy}>
-                Distribute
-              </Button>
+              <>
+                <Button
+                  variant="ghost"
+                  icon={BarChart3}
+                  onClick={() => {
+                    setDigestLoading(true);
+                    setDigestStatus('');
+                    api.get('/crm/admin/daily-digest')
+                      .then(({ data }) => { setDigestData(data.digest); setDigestOpen(true); })
+                      .catch((e) => setErr(e?.response?.data?.message || 'Could not load digest.'))
+                      .finally(() => setDigestLoading(false));
+                  }}
+                  disabled={digestLoading}
+                >
+                  8 PM Digest
+                </Button>
+                <Button variant="ghost" icon={Shuffle} onClick={distribute} disabled={busy}>
+                  Distribute
+                </Button>
+              </>
             )}
           </div>
         }
@@ -558,6 +627,33 @@ export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace
               <option value="converted">Converted</option>
             </Select>
 
+            <button
+              type="button"
+              onClick={() => setHideSnoozed(!hideSnoozed)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: '1px solid',
+                borderColor: hideSnoozed ? '#2563eb' : '#cbd5e1',
+                background: hideSnoozed ? '#eff6ff' : '#fff',
+                color: hideSnoozed ? '#1d4ed8' : '#64748b',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+              title="Toggle between showing only immediately actionable leads or all leads including snoozed ones"
+            >
+              <span>{hideSnoozed ? '👁️ Actionable Leads Only' : '👁️ Show All (incl. Snoozed)'}</span>
+              {snoozedCount > 0 && (
+                <span style={{ background: hideSnoozed ? '#2563eb' : '#94a3b8', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 11 }}>
+                  {snoozedCount} snoozed
+                </span>
+              )}
+            </button>
+
             {isAdmin && (
               <Select
                 value={agentId}
@@ -614,6 +710,52 @@ export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace
         setMsg={setMsg}
         setErr={setErr}
       />
+
+      {/* Task 3: 8:00 PM Daily Performance Digest Modal */}
+      {digestOpen && (
+        <Modal
+          open={digestOpen}
+          title="Daily Telecalling Digest (Automated 8:00 PM Summary)"
+          onClose={() => setDigestOpen(false)}
+          width={540}
+        >
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: '#1e293b' }}>
+              {digestData?.text || 'Compiling performance metrics...'}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Input
+                value={digestPhone}
+                onChange={(e) => setDigestPhone(e.target.value)}
+                placeholder="Optional: Admin Mobile (defaults to configured admin phone)"
+                style={{ flex: 1 }}
+              />
+              <Button
+                variant="primary"
+                icon={Send}
+                disabled={digestLoading}
+                onClick={() => {
+                  setDigestLoading(true);
+                  setDigestStatus('');
+                  api.post('/crm/admin/daily-digest/send', { phone: digestPhone || undefined })
+                    .then(({ data }) => setDigestStatus(data.result?.sent ? `✅ Dispatched to WhatsApp (+91 ${data.result.phone})` : `⚠️ Notice: ${data.result?.reason || data.result?.error || 'Check server logs'}`))
+                    .catch((e) => setDigestStatus(`❌ Error: ${e?.response?.data?.message || e.message}`))
+                    .finally(() => setDigestLoading(false));
+                }}
+              >
+                {digestLoading ? 'Sending…' : 'Send WhatsApp Now'}
+              </Button>
+            </div>
+
+            {digestStatus && (
+              <div style={{ fontSize: 13, fontWeight: 500, color: digestStatus.startsWith('✅') ? '#16a34a' : '#d97706' }}>
+                {digestStatus}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

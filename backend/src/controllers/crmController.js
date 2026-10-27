@@ -4,6 +4,7 @@ import { click2call, fetchUserCdr } from '../services/telecmiService.js';
 import { loadCrmConfig, saveCrmConfig } from '../services/crmConfig.js';
 import { isPaid, paidFlag, PAID_VALUES } from '../utils/paid.js';
 import { sendText, sendUrlButtonMessage, sendFlowMessage, sendMediaMessage, sendTemplateMessage, sendReaction } from '../services/whatsappService.js';
+import { sendWactoText, wactoConfigured } from '../services/wactoService.js';
 import { saveCrmMessage, getFlowMessageText, getActiveAgents, assignAgentRoundRobin } from './whatsappController.js';
 import * as cloudinary from '../services/cloudinaryService.js';
 import { ROLES } from '../constants/roles.js';
@@ -81,7 +82,7 @@ export async function resolveWindow(db, cleanMobile, conv = null) {
 export async function listConversations(req, res) {
   try {
     const db = getAppDb();
-    const { search = '', status = 'all', lead_status = 'all', page = 1, limit = 50 } = req.query;
+    const { search = '', status = 'all', lead_status = 'all', page = 1, limit = 50, hide_snoozed } = req.query;
 
     const query = {};
     const and = [];
@@ -96,6 +97,16 @@ export async function listConversations(req, res) {
     }
     if (status !== 'all') query.status = status;
     if (lead_status !== 'all') query.lead_status = lead_status;
+
+    if (hide_snoozed === 'true') {
+      and.push({
+        $or: [
+          { snooze_until: { $exists: false } },
+          { snooze_until: null },
+          { snooze_until: { $lte: new Date() } },
+        ],
+      });
+    }
 
     if (search.trim()) {
       const s = escapeRegex(search.trim());
@@ -138,6 +149,10 @@ export async function listConversations(req, res) {
       const isRegistered = !!(u || e);
       const paidStatus = u?.paid_status || e?.paid_status || 'No';
       const isPro = String(paidStatus).toLowerCase() === 'yes';
+      const now = new Date();
+      const isSnoozed = c.snooze_until ? new Date(c.snooze_until) > now : false;
+      const isDue = (c.next_call_at && new Date(c.next_call_at) <= now) ||
+        (c.snooze_until && new Date(c.snooze_until) <= now && Number(c.call_attempts) > 0);
 
       return {
         ...c,
@@ -149,6 +164,12 @@ export async function listConversations(req, res) {
         ward_number: u?.ward_id || e?.ward_number || '-',
         position: u?.position || e?.position || '-',
         passcode: u?.password_str || e?.passcode || '-',
+        snooze_until: c.snooze_until || null,
+        next_call_at: c.next_call_at || null,
+        call_attempts: Number(c.call_attempts) || 0,
+        archived: !!c.archived,
+        is_snoozed: isSnoozed,
+        is_due: isDue,
       };
     });
 
@@ -608,10 +629,53 @@ export async function updateLeadStatus(req, res) {
       updateDoc.agent_notes = String(req.body.agent_notes || '').trim();
     }
 
-    // Preserve the round-robin owner; only claim ownership if none is set yet.
+    // Load existing lead details and candidate profile
     const existing = await db
       .collection('tbl_crm_conversation')
-      .findOne({ clean_mobile: cleanMobile }, { projection: { assigned_agent_id: 1 } });
+      .findOne({ clean_mobile: cleanMobile });
+
+    const [candidateUser, candidateEnquiry] = await Promise.all([
+      db.collection('tbl_user').findOne({ mobile_no: cleanMobile }),
+      db.collection('tbl_enquiry').findOne({ mobile: cleanMobile }),
+    ]);
+    const candidateName = candidateUser?.first_name || candidateEnquiry?.full_name || existing?.contact_name || 'Candidate';
+    const isRegisteredUser = !!(candidateUser || candidateEnquiry);
+
+    let currentAttempts = Number(existing?.call_attempts) || 0;
+    let effectiveStatus = lead_status;
+
+    // --- Task 2: Auto-Snooze & 3-Strike Rule ---
+    if (lead_status === 'not_answered' || lead_status === 'switch_off') {
+      currentAttempts += 1;
+      updateDoc.call_attempts = currentAttempts;
+
+      if (currentAttempts >= 3) {
+        // 3rd strike! Automatically retire to unreachable to keep queues clean
+        effectiveStatus = 'unreachable';
+        updateDoc.lead_status = 'unreachable';
+        updateDoc.archived = true;
+        updateDoc.archived_at = new Date();
+        updateDoc.archive_reason = '3 strikes (unreachable after 3 call attempts)';
+        updateDoc.snooze_until = null;
+        updateDoc.next_call_at = null;
+        updateDoc.agent_notes = (updateDoc.agent_notes ? updateDoc.agent_notes + ' ' : '') + '[Auto-retired after 3 missed attempts]';
+      } else {
+        // Snooze for 3 hours (or custom snooze_hours) so it re-appears later
+        const snoozeHours = Math.max(1, Number(req.body.snooze_hours) || 3);
+        const snoozeTime = new Date(Date.now() + snoozeHours * 3600 * 1000);
+        updateDoc.snooze_until = snoozeTime;
+        updateDoc.next_call_at = snoozeTime;
+      }
+    } else if (lead_status === 'call_back') {
+      const cbDate = req.body.callback_at ? new Date(req.body.callback_at) : new Date(Date.now() + 3 * 3600 * 1000);
+      updateDoc.next_call_at = cbDate;
+      updateDoc.snooze_until = cbDate;
+    } else if (['interested', 'converted', 'registration_completed'].includes(lead_status)) {
+      updateDoc.snooze_until = null;
+      updateDoc.call_attempts = 0;
+    }
+
+    // Preserve the round-robin owner; only claim ownership if none is set yet.
     if (!existing?.assigned_agent_id) {
       updateDoc.assigned_agent_id = agentId;
       updateDoc.assigned_agent_name = agentName;
@@ -619,15 +683,75 @@ export async function updateLeadStatus(req, res) {
 
     // Append to the status-change history log (every click is recorded, even
     // repeats of the same status — e.g. calling the same lead twice).
-    const historyEntry = { status: lead_status, note, by: agentName, at: new Date() };
+    let historyNote = note;
+    if (effectiveStatus === 'unreachable' && currentAttempts >= 3) {
+      historyNote = (historyNote ? historyNote + ' ' : '') + '[System: Auto-retired to Unreachable after 3 attempts]';
+    } else if ((lead_status === 'not_answered' || lead_status === 'switch_off') && updateDoc.snooze_until) {
+      historyNote = (historyNote ? historyNote + ' ' : '') + `[System: Snoozed for 3h · Attempt #${currentAttempts}]`;
+    } else if (lead_status === 'call_back' && updateDoc.next_call_at) {
+      historyNote = (historyNote ? historyNote + ' ' : '') + `[Scheduled Callback for ${updateDoc.next_call_at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}]`;
+    }
+
+    const historyEntry = { status: effectiveStatus, note: historyNote, by: agentName, at: new Date() };
     await db.collection('tbl_crm_conversation').updateOne(
       { clean_mobile: cleanMobile },
       { $set: updateDoc, $push: { status_history: historyEntry } }
     );
 
+    // --- Task 1: Instant Post-Call WhatsApp Drop ---
+    let waSent = false;
+    let waError = null;
+    let waText = '';
+
+    if (req.body.send_whatsapp) {
+      const firstName = String(candidateName).trim().split(/\s+/)[0] || 'வணக்கம்';
+      const waType = req.body.whatsapp_type || (isRegisteredUser ? 'pro_pitch' : 'incomplete_guide');
+
+      if (waType === 'incomplete_guide') {
+        waText = `வணக்கம் ${firstName}! 🗳️\n\nEDMS Election Management Portal-ல் உங்கள் பூத் மற்றும் வாக்காளர் விவரங்களை அணுக, கீழ்க்கண்ட லிங்க் மூலம் பதிவை உடனே முடிக்கவும்:\n👉 https://tnedms.com/register?mobile=${cleanMobile}\n\nஉங்களுக்கு ஏதேனும் உதவி தேவைப்பட்டால் இந்த எண்ணில் பதிலளிக்கவும் அல்லது எங்களை அழைக்கவும்.`;
+      } else if (waType === 'pro_pitch') {
+        waText = `வணக்கம் ${firstName}! 🚀\n\nநன்றி! EDMS Pro Plan மூலம் நீங்கள் பெறக்கூடிய நன்மைகள்:\n✅ உங்கள் தொகுதி/வார்டு முழு வாக்காளர் பட்டியல் & குடும்ப விவரங்கள்\n✅ பூத் வாரியான வாக்காளர் சீட்டு பிரிண்டிங் (Booth Slips)\n✅ களப்பணியாளர் மொபைல் ஆப் (Ward Surveyor App)\n\n👉 லாகின் செய்ய: https://tnedms.com/login\n💳 உடனடி ஆக்டிவேஷன்: UPI மூலம் செலுத்தலாம் (UPI ID: 9940136163@okbizaxis)\n\nஏதேனும் சந்தேகம் இருந்தால் உடனடியாக அழைக்கவும்!`;
+      } else {
+        waText = String(req.body.whatsapp_text || '').trim();
+      }
+
+      if (waText) {
+        try {
+          if (wactoConfigured()) {
+            await sendWactoText(cleanMobile, waText);
+          } else {
+            await sendText(cleanMobile, waText);
+          }
+          waSent = true;
+        } catch (e) {
+          console.warn(`[CRM updateLeadStatus] WhatsApp send notice for ${cleanMobile}:`, e.message);
+          waError = e.message;
+        }
+
+        // Always save message in conversation history so the agent sees it
+        try {
+          await saveCrmMessage({
+            phone: cleanMobile,
+            direction: 'outgoing',
+            type: 'text',
+            body: waText,
+            contactName: candidateName,
+          });
+        } catch (e) {
+          console.warn('[CRM updateLeadStatus] saveCrmMessage warning:', e.message);
+        }
+      }
+    }
+
     return res.json({
       success: true,
-      message: `Lead status updated to '${lead_status}' by ${agentName}.`,
+      message: `Lead status updated to '${effectiveStatus}' by ${agentName}.` + (waSent ? ' WhatsApp message dispatched.' : ''),
+      lead_status: effectiveStatus,
+      snoozed: !!updateDoc.snooze_until,
+      snooze_until: updateDoc.snooze_until,
+      next_call_at: updateDoc.next_call_at,
+      archived: !!updateDoc.archived,
+      whatsapp: { sent: waSent, error: waError, text: waText },
     });
   } catch (err) {
     console.error('[CRM updateLeadStatus Error]:', err);
@@ -1368,3 +1492,35 @@ export async function clearChat(req, res) {
     return res.status(500).json({ success: false, message: err.message || 'Failed to clear chat.' });
   }
 }
+
+/**
+ * GET /api/crm/admin/daily-digest — Preview today's 8:00 PM performance digest
+ */
+export async function getDailyDigest(req, res) {
+  try {
+    const db = getAppDb();
+    const { generateDailyDigestData } = await import('../services/crmScheduler.js');
+    const digest = await generateDailyDigestData(db);
+    return res.json({ success: true, digest });
+  } catch (err) {
+    console.error('[CRM getDailyDigest Error]:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to generate digest.' });
+  }
+}
+
+/**
+ * POST /api/crm/admin/daily-digest/send — Manually trigger today's digest to admin
+ */
+export async function sendDailyDigestNow(req, res) {
+  try {
+    const db = getAppDb();
+    const { dispatchDailyDigest } = await import('../services/crmScheduler.js');
+    const targetPhone = req.body.phone || null;
+    const result = await dispatchDailyDigest(db, { force: true, targetPhone });
+    return res.json({ success: true, result });
+  } catch (err) {
+    console.error('[CRM sendDailyDigestNow Error]:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to send digest.' });
+  }
+}
+
