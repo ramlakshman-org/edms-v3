@@ -1246,6 +1246,15 @@ export async function teamReport(req, res) {
       .sort({ last_message_at: -1 })
       .toArray();
 
+    // Enrich with registered user and pro status
+    const mobiles = convos.map((c) => c.clean_mobile).filter(Boolean);
+    const [users, enquiries] = await Promise.all([
+      db.collection('tbl_user').find({ mobile_no: { $in: mobiles } }).toArray(),
+      db.collection('tbl_enquiry').find({ mobile: { $in: mobiles } }).toArray(),
+    ]);
+    const userByMobile = Object.fromEntries(users.map((u) => [u.mobile_no, u]));
+    const enquiryByMobile = Object.fromEntries(enquiries.map((e) => [e.mobile, e]));
+
     const rows = [];
     for (const c of convos) {
       const history = Array.isArray(c.status_history) ? c.status_history : [];
@@ -1253,14 +1262,26 @@ export async function teamReport(req, res) {
       const activityInRange = hasRange ? inRange(c.last_message_at) : true;
       if (hasRange && periodChanges.length === 0 && !activityInRange) continue;
       const latest = periodChanges.length ? periodChanges[periodChanges.length - 1] : null;
+
+      const u = userByMobile[c.clean_mobile];
+      const e = enquiryByMobile[c.clean_mobile];
+      const isRegistered = !!(u || e);
+      const isPro = String(u?.paid_status || e?.paid_status || '').toLowerCase() === 'yes';
+
+      const talkSec = periodChanges.reduce((sum, h) => sum + (Number(h.duration) || 0), 0);
+
       rows.push({
-        name: c.contact_name || `User ${String(c.clean_mobile || '').slice(-4)}`,
+        name: c.contact_name || u?.first_name || e?.full_name || `User ${String(c.clean_mobile || '').slice(-4)}`,
         mobile: c.clean_mobile,
         lead_status: latest ? latest.status : (c.lead_status || 'none'),
         status_changes: periodChanges.length,
-        status_timeline: periodChanges.map((h) => ({ status: h.status, at: h.at, note: h.note || '', by: h.by || '' })),
+        status_timeline: periodChanges.map((h) => ({ status: h.status, at: h.at, note: h.note || '', by: h.by || '', duration: h.duration || 0 })),
         note: latest?.note || '',
-        is_registered: !!c.is_registered,
+        is_registered: isRegistered,
+        is_pro: isPro,
+        talk_seconds: talkSec,
+        call_attempts: Number(c.call_attempts) || 0,
+        archived: !!c.archived,
         agent: c.assigned_agent_name || '-',
         last_activity: c.last_message_at || null,
         last_status_at: latest ? latest.at : null,

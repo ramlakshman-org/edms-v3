@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, CalendarRange, Users, PhoneCall, PhoneOff, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Download, CalendarRange, Users, PhoneCall, PhoneOff, ThumbsUp, ThumbsDown, Clock, CheckCircle2, Sparkles } from 'lucide-react';
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { PageHeader, Card, Kpi, Pill, Segmented } from '../../civic/kit.jsx';
@@ -9,6 +9,17 @@ import { statusMeta } from '../../civic/leadStatus.js';
 const initials = (name, mobile) => {
   const s = String(name || '').replace(/\+?\d+/g, '').trim();
   return s ? s.split(/\s+/).map((p) => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() : String(mobile || '?').slice(-2);
+};
+
+const fmtDur = (sec) => {
+  const s = Number(sec) || 0;
+  if (!s) return '0s';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const rem = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${rem}s`;
+  return `${rem}s`;
 };
 
 // Period presets → [from, to] ISO strings (local day boundaries).
@@ -58,8 +69,10 @@ export default function LeadReports() {
 
   const rows = data.rows;
   const totals = useMemo(() => {
-    const t = { leads: rows.length, calls: 0, interested: 0, not_interested: 0, unreachable: 0 };
+    const t = { leads: rows.length, calls: 0, interested: 0, not_interested: 0, unreachable: 0, registered: 0, talkTime: 0 };
     for (const r of rows) {
+      if (r.is_registered) t.registered += 1;
+      t.talkTime += (Number(r.talk_seconds) || 0);
       for (const h of (r.status_timeline || [])) {
         const b = statusMeta(h.status).bucket;
         if (b === 'calls') t.calls += 1;
@@ -73,12 +86,19 @@ export default function LeadReports() {
 
   const exportCsv = () => {
     const flat = rows.map((r) => ({
-      Name: r.name, Mobile: r.mobile, Status: statusMeta(r.lead_status).label,
-      Changes: r.status_changes, Registered: r.is_registered ? 'Yes' : 'No',
-      Telecaller: r.agent, LastStatusAt: fmtDateTime(r.last_status_at), Note: r.note,
+      Name: r.name,
+      Mobile: r.mobile,
+      Status: statusMeta(r.lead_status).label,
+      Calls: r.status_changes,
+      TalkTime: fmtDur(r.talk_seconds),
+      Registered: r.is_registered ? 'Yes' : 'No',
+      ProPlan: r.is_pro ? 'Yes' : 'No',
+      Telecaller: r.agent,
+      LastStatusAt: fmtDateTime(r.last_status_at),
+      Note: r.note,
     }));
     const label = preset === 'custom' ? `${custom.from || 'start'}_${custom.to || 'end'}` : preset;
-    download(`lead-report-${label}.csv`, csvOf(flat, ['Name', 'Mobile', 'Status', 'Changes', 'Registered', 'Telecaller', 'LastStatusAt', 'Note']));
+    download(`lead-report-${label}.csv`, csvOf(flat, ['Name', 'Mobile', 'Status', 'Calls', 'TalkTime', 'Registered', 'ProPlan', 'Telecaller', 'LastStatusAt', 'Note']));
   };
 
   const columns = [
@@ -96,18 +116,31 @@ export default function LeadReports() {
         </div>
       ),
     },
+    {
+      key: 'account',
+      label: 'Category',
+      render: (r) => (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <Pill tone={r.is_registered ? 'ok' : 'neutral'} dot>
+            {r.is_registered ? 'Registered' : 'Incomplete'}
+          </Pill>
+          {r.is_pro && <Pill tone="info" icon={Sparkles}>Pro</Pill>}
+        </div>
+      ),
+    },
     { key: 'status', label: 'Latest status', render: (r) => { const m = statusMeta(r.lead_status); return <Pill tone={m.tone} dot>{m.label}</Pill>; } },
-    { key: 'changes', label: 'Calls/changes', align: 'right', render: (r) => (r.status_changes ?? 0).toLocaleString('en-IN') },
+    { key: 'talk', label: 'Talk Time', align: 'right', render: (r) => fmtDur(r.talk_seconds) },
+    { key: 'changes', label: 'Calls', align: 'right', render: (r) => (r.status_changes ?? 0).toLocaleString('en-IN') },
     ...(isAdmin ? [{ key: 'agent', label: 'Telecaller', medium: false, render: (r) => r.agent || '—' }] : []),
-    { key: 'when', label: 'Last status at', align: 'right', medium: false, render: (r) => <span className="cv-muted cv-mono-sm" style={{ fontSize: 12 }}>{fmtDateTime(r.last_status_at)}</span> },
-    { key: 'note', label: 'Last note', medium: false, wrap: 180, render: (r) => r.note || <span className="cv-muted">—</span> },
+    { key: 'when', label: 'Last activity', align: 'right', medium: false, render: (r) => <span className="cv-muted cv-mono-sm" style={{ fontSize: 12 }}>{fmtDateTime(r.last_status_at)}</span> },
+    { key: 'note', label: 'Note', medium: false, wrap: 180, render: (r) => r.note || <span className="cv-muted">—</span> },
   ];
 
   return (
     <div className="cv-page">
       <PageHeader
         eyebrow="Reports"
-        title={isAdmin ? 'Lead Reports' : 'My Reports'}
+        title={isAdmin ? 'Lead & Telecalling Reports' : 'My Call Reports'}
         subtitle={`${preset === 'today' ? 'Today' : preset === 'week' ? 'Last 7 days' : preset === 'month' ? 'This month' : preset === 'custom' ? 'Custom range' : 'All time'}${from ? ` · from ${fmtDate(from)}` : ''}`}
         actions={<Button variant="ghost" icon={Download} onClick={exportCsv} disabled={!rows.length}>Export CSV</Button>}
       />
@@ -141,8 +174,9 @@ export default function LeadReports() {
       <div className="cv-kpis cv-kpis--even" style={{ margin: '16px 0' }}>
         <Kpi icon={Users} label="Leads in period" value={totals.leads.toLocaleString('en-IN')} />
         <Kpi icon={PhoneCall} label="Calls logged" value={totals.calls.toLocaleString('en-IN')} tone="info" />
+        <Kpi icon={Clock} label="Total talk time" value={fmtDur(totals.talkTime)} tone="info" />
         <Kpi icon={ThumbsUp} label="Interested" value={totals.interested.toLocaleString('en-IN')} tone="ok" />
-        <Kpi icon={ThumbsDown} label="Not interested" value={totals.not_interested.toLocaleString('en-IN')} tone="bad" />
+        <Kpi icon={CheckCircle2} label="Registered" value={totals.registered.toLocaleString('en-IN')} tone="ok" />
         <Kpi icon={PhoneOff} label="Unreachable" value={totals.unreachable.toLocaleString('en-IN')} tone="warn" />
       </div>
 
