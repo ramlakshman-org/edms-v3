@@ -31,6 +31,10 @@ async function resolveTemplateHeaderMedia(db, name, expectType = 'image') {
   const keyByName = {
     edms_welcome: 'welcome_back_header',
     edms_reg_flow: 'register_header',
+    edms_payment_reminder: 'payment_reminder_header',
+    edms_complete_registration: 'incomplete_nudge_header',
+    edms_account_activated: 'pro_activated_header',
+    edms_login_link: 'login_credentials_header',
   };
   try {
     const key = keyByName[name];
@@ -67,6 +71,10 @@ function extractText(components = []) {
 const HEADER_ASSET_BY_TEMPLATE = {
   edms_reg_flow: 'register_header',
   edms_welcome: 'welcome_back_header',
+  edms_payment_reminder: 'payment_reminder_header',
+  edms_complete_registration: 'incomplete_nudge_header',
+  edms_account_activated: 'pro_activated_header',
+  edms_login_link: 'login_credentials_header',
 };
 
 /**

@@ -10,7 +10,7 @@ const EVERY_MS = 2 * 60 * 1000;
 const LOCK_MS = 10 * 60 * 1000;
 
 export const wactoSender = {
-  sendTemplate: (mobile, name, lang, params) => sendWactoTemplate({ mobile, templateName: name, language: lang, bodyParams: params }),
+  sendTemplate: (mobile, name, lang, params, headerImage) => sendWactoTemplate({ mobile, templateName: name, language: lang, bodyParams: params, headerImage }),
   sendText: (mobile, text) => sendWactoText(mobile, text),
 };
 

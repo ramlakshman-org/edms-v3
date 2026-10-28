@@ -36,9 +36,17 @@ export function planFor(booths) {
   return { name: 'Up to 100 Booths', price: '₹50,000' };
 }
 
+export async function resolveHeaderImg(db, key) {
+  try {
+    const asset = await db.collection('app_flow_images').findOne({ key });
+    if (asset?.url) return String(asset.url).replace(/^http:\/\//, 'https://');
+  } catch {}
+  return 'https://tnedms.com/EDM.png';
+}
+
 // The template message for one person, exactly as the jobs build it (also used by the admin "Send a test message").
 // user = their tbl_user row or null (then a neutral name and 1 booth are used).
-export function templateFor(settings, key, lang, user = null, fallbackName = '') {
+export function templateFor(settings, key, lang, user = null, fallbackName = '', headerImage = 'https://tnedms.com/EDM.png') {
   const t = settings.templates[key];
   if (!t) throw new Error(`Unknown template ${key}.`);
   const booths = (Array.isArray(user?.booths) && user.booths.length) || Number(user?.booth_count) || 1;
@@ -46,7 +54,7 @@ export function templateFor(settings, key, lang, user = null, fallbackName = '')
   const params = key === 'payment' ? [name, String(booths), `${planFor(booths).price} + 18% GST`]
     : key === 'activated' ? [name, String(booths)]
     : [name];
-  return { name: t.name, lang: lang === 'ta' ? t.ta : t.en, params };
+  return { name: t.name, lang: lang === 'ta' ? t.ta : t.en, params, headerImage };
 }
 
 // ── hooks used by the bot and the website ─────────────────────────────────────
@@ -114,7 +122,7 @@ async function deliver(sender, kind, mode, mobile, payload) {
   if (mode !== 'send') return { ok: true, dry: true };
   try {
     const res = payload.template
-      ? await sender.sendTemplate(mobile, payload.template.name, payload.template.lang, payload.template.params)
+      ? await sender.sendTemplate(mobile, payload.template.name, payload.template.lang, payload.template.params, payload.template.headerImage)
       : await sender.sendText(mobile, payload.text);
     return { ok: true, message_id: res?.data?.messages?.[0]?.id || res?.messages?.[0]?.id || res?.data?.id || null };
   } catch (e) {
@@ -141,7 +149,8 @@ async function paymentTick(db, settings, sender, now) {
     const n = (r.count || 0) + 1;
     const booths = (Array.isArray(user.booths) && user.booths.length) || Number(user.booth_count) || r.booth_count || 1;
     const t = settings.templates.payment;
-    const tpl = { name: t.name, lang: r.lang === 'ta' ? t.ta : t.en, params: [firstName(user.first_name || r.name), String(booths), `${planFor(booths).price} + 18% GST`] };
+    const headerImg = await resolveHeaderImg(db, 'payment_reminder_header');
+    const tpl = { name: t.name, lang: r.lang === 'ta' ? t.ta : t.en, params: [firstName(user.first_name || r.name), String(booths), `${planFor(booths).price} + 18% GST`], headerImage: headerImg };
     const res = await deliver(sender, 'payment', mode, r.mobile, { template: tpl });
     await log(db, { kind: 'payment', mobile: r.mobile, step: n, of: PAYMENT_GAPS_H.length, template: tpl.name, lang: tpl.lang, mode, ...res, at: iso(now) });
     if (!res.ok) {
@@ -200,7 +209,8 @@ async function incompleteTick(db, settings, sender, now) {
       const sess = await db.collection('tbl_wacto_sessions').findOne({ phone: `91${m}` });
       lang = sess?.lang === 'ta' ? 'ta' : 'en';
       const t = settings.templates.incomplete;
-      payload = { template: { name: t.name, lang: lang === 'ta' ? t.ta : t.en, params: [firstName(l.web_name || l.wa_name)] } };
+      const headerImg = await resolveHeaderImg(db, 'incomplete_nudge_header');
+      payload = { template: { name: t.name, lang: lang === 'ta' ? t.ta : t.en, params: [firstName(l.web_name || l.wa_name)], headerImage: headerImg } };
     }
     const res = await deliver(sender, 'incomplete', mode, m, payload);
     await log(db, { kind: 'incomplete', mobile: m, step: what === 'nudge' ? 'nudge' : tcount + 1, of: 2, template: payload.template?.name || '(free message)', lang, mode, ...res, at: iso(now) });

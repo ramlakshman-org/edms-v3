@@ -53,7 +53,7 @@ export async function testSend(req, res, send = sendWactoTemplate) {
     const tpl = templateFor(settings, template, lang, user, lead?.web_name || lead?.wa_name || 'there');
     const at = new Date().toISOString();
     try {
-      const r = await send({ mobile: m, templateName: tpl.name, language: tpl.lang, bodyParams: tpl.params });
+      const r = await send({ mobile: m, templateName: tpl.name, language: tpl.lang, bodyParams: tpl.params, headerImage: tpl.headerImage });
       await db.collection(REMINDER_LOG_COLL).insertOne({ kind: 'test', mobile: m, step: template, template: tpl.name, lang: tpl.lang, mode: 'send', ok: true, message_id: r?.data?.messages?.[0]?.id || r?.messages?.[0]?.id || null, at, by: req.user?.name || 'admin' });
       res.json({ success: true, message: `Sent "${tpl.name}" (${tpl.lang}) to ******${m.slice(-4)}.`, params: tpl.params });
     } catch (e) {

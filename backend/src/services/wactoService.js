@@ -142,7 +142,7 @@ export async function sendWactoImageWithCaption(mobile, imageUrl, caption) {
  * template, which needs 250 messages sent through the channel first.
  * Credentials are shown on screen at registration in the meantime.
  */
-export async function sendWactoCredentials({ mobile, name }) {
+export async function sendWactoCredentials({ mobile, name, headerImage = 'https://tnedms.com/EDM.png' }) {
   const firstName = String(name || '').split(' ')[0] || 'there';
 
   // Best option: account active notification + Login Now button
@@ -151,6 +151,7 @@ export async function sendWactoCredentials({ mobile, name }) {
       mobile,
       templateName: 'edms_login_link',
       bodyParams: [firstName],
+      headerImage,
     });
   } catch (e1) {
     console.warn('[WACTO] edms_login_link failed:', e1.message);
@@ -162,6 +163,7 @@ export async function sendWactoCredentials({ mobile, name }) {
       mobile,
       templateName: 'edms_account_ready',
       bodyParams: [firstName],
+      headerImage,
     });
   } catch (e2) {
     console.warn('[WACTO] edms_account_ready failed:', e2.message);
