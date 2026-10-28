@@ -175,6 +175,16 @@ export async function listConversations(req, res) {
       const isDue = (c.next_call_at && new Date(c.next_call_at) <= now) ||
         (c.snooze_until && new Date(c.snooze_until) <= now && Number(c.call_attempts) > 0);
 
+      // Candidate Activation & Demo Paywall Tracking
+      const hasLoggedIn = !!(u?.last_login_at || c.has_logged_in || e?.has_logged_in);
+      const lastLoginAt = u?.last_login_at || c.last_dashboard_access_at || e?.last_login_at || null;
+      const firstLoginAt = u?.first_login_at || c.first_login_at || null;
+      const loginCount = u?.login_count || c.login_count || e?.login_count || 0;
+      const demoExpiresAt = u?.demo_expires_at ? new Date(u.demo_expires_at) : (c.demo_expires_at ? new Date(c.demo_expires_at) : null);
+      const demoDiffMs = demoExpiresAt ? demoExpiresAt.getTime() - now.getTime() : null;
+      const demoExpired = !isPro && demoExpiresAt && demoDiffMs <= 0;
+      const demoRemainingSec = !isPro && demoExpiresAt ? Math.max(0, Math.floor(demoDiffMs / 1000)) : null;
+
       return {
         ...c,
         is_registered: isRegistered,
@@ -191,6 +201,13 @@ export async function listConversations(req, res) {
         archived: !!c.archived,
         is_snoozed: isSnoozed,
         is_due: isDue,
+        has_logged_in: hasLoggedIn,
+        last_login_at: lastLoginAt,
+        first_login_at: firstLoginAt,
+        login_count: loginCount,
+        demo_expires_at: demoExpiresAt,
+        demo_expired: demoExpired,
+        demo_remaining_sec: demoRemainingSec,
       };
     });
 
@@ -317,6 +334,13 @@ export async function getConversationHistory(req, res) {
       booths,
       position: user?.position || enquiry?.position || '-',
       passcode: user?.password_str || enquiry?.passcode || '-',
+      has_logged_in: !!(user?.last_login_at || conv?.has_logged_in || enquiry?.has_logged_in),
+      last_login_at: user?.last_login_at || conv?.last_dashboard_access_at || enquiry?.last_login_at || null,
+      first_login_at: user?.first_login_at || conv?.first_login_at || null,
+      login_count: user?.login_count || conv?.login_count || enquiry?.login_count || 0,
+      demo_expires_at: user?.demo_expires_at ? new Date(user.demo_expires_at) : (conv?.demo_expires_at ? new Date(conv.demo_expires_at) : null),
+      demo_expired: !isPro && user?.demo_expires_at && new Date(user.demo_expires_at) < new Date(),
+      demo_remaining_sec: !isPro && user?.demo_expires_at ? Math.max(0, Math.floor((new Date(user.demo_expires_at).getTime() - Date.now()) / 1000)) : null,
       lead_status: conv?.lead_status || 'none',
       agent_notes: conv?.agent_notes || '',
       assigned_agent_name: conv?.assigned_agent_name || conv?.last_handled_by || '-',
@@ -1765,6 +1789,25 @@ export async function getAdminLeaderboard(req, res) {
         const remMins = mins % 60;
         const talkTimeStr = hrs > 0 ? `${hrs}h ${remMins}m` : `${mins}m`;
 
+        // Real-Time Shift Presence & Idle Calculation
+        const lastLogin = a.last_login_at ? new Date(a.last_login_at) : null;
+        const loggedInToday = lastLogin && lastLogin >= startToday;
+        const latestAction = lastActive && lastLogin ? (lastActive > lastLogin ? lastActive : lastLogin) : (lastActive || lastLogin);
+        const minsSinceAction = latestAction ? Math.floor((now.getTime() - latestAction.getTime()) / 60000) : 9999;
+
+        let presenceStatus = 'offline';
+        let presenceLabel = 'Offline / Absent';
+
+        if (loggedInToday) {
+          if (minsSinceAction <= 20) {
+            presenceStatus = 'active';
+            presenceLabel = 'Active Now';
+          } else {
+            presenceStatus = 'idle';
+            presenceLabel = `Idle (${minsSinceAction}m)`;
+          }
+        }
+
         return {
           id: a.id,
           name: a.name,
@@ -1778,6 +1821,9 @@ export async function getAdminLeaderboard(req, res) {
           short_calls: shortCallsToday,
           untouched_leads: untouched,
           last_active: lastActive,
+          last_login_at: lastLogin,
+          presence_status: presenceStatus,
+          presence_label: presenceLabel,
         };
       })
     );

@@ -24,6 +24,7 @@ import {
   Sparkles,
   Lock,
   CheckCircle2,
+  AlertTriangle,
   ChevronDown,
   ChevronUp,
   BarChart3,
@@ -925,12 +926,39 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
             </div>
           </div>
         ) : (
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#166534', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ background: contact.demo_expired ? '#fef2f2' : '#f0fdf4', border: `1px solid ${contact.demo_expired ? '#fecaca' : '#bbf7d0'}`, borderRadius: 8, padding: '10px 14px', fontSize: 13, color: contact.demo_expired ? '#991b1b' : '#166534', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            {contact.demo_expired ? <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 2, color: '#dc2626' }} /> : <CheckCircle2 size={16} style={{ flexShrink: 0, marginTop: 2 }} />}
             <div>
-              <strong>Registered Candidate:</strong> Active login created ({contact.clean_mobile}).
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <strong>Registered Candidate:</strong>
+                {contact.has_logged_in ? (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '1px 6px', borderRadius: 4 }}>
+                    🟢 Portal Tested ({contact.login_count || 1} visits)
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#d97706', background: '#fef3c7', padding: '1px 6px', borderRadius: 4 }}>
+                    ⚪ Never Logged In Yet
+                  </span>
+                )}
+                {contact.demo_expired && (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', background: '#fee2e2', padding: '1px 6px', borderRadius: 4 }}>
+                    🔒 24h Demo Expired (Dashboard Locked)
+                  </span>
+                )}
+                {!contact.demo_expired && contact.demo_remaining_sec != null && (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#dbeafe', padding: '1px 6px', borderRadius: 4 }}>
+                    ⏱️ Demo: {Math.floor(contact.demo_remaining_sec / 3600)}h left
+                  </span>
+                )}
+              </div>
               <div style={{ marginTop: 4, fontSize: 12.5 }}>
-                <strong>Talking Points:</strong> Congratulate them on registration. Walk them through logging into their portal, demo the booth voter slip features, and pitch upgrading to the <strong>Pro Plan</strong> to unlock full voter lists.
+                {contact.demo_expired ? (
+                  <span><strong>Closing Leverage:</strong> Candidate's 24-hour preview has locked. Pitch: <em>"Sir, your 24h preview expired. I can activate your Pro Plan right now so your voter slips and lists remain open."</em></span>
+                ) : contact.has_logged_in ? (
+                  <span><strong>Talking Points:</strong> Candidate already logged in and viewed sample booth counts! Ask how they liked the interface, and pitch <strong>Pro Plan</strong> upgrade before their trial locks.</span>
+                ) : (
+                  <span><strong>Talking Points:</strong> Candidate has NOT logged into their portal yet. Urge them: <em>"We sent your login details on WhatsApp yesterday. Let me guide you right now to open the dashboard."</em></span>
+                )}
               </div>
             </div>
           </div>

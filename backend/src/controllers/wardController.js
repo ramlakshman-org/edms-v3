@@ -62,10 +62,21 @@ export async function home(req, res) {
   const rec = await wardRecord(req);
   const booths = await effectiveBooths(rec);
 
+  const now = new Date();
+  const isPaidCandidate = isPaid(rec?.paid_status);
+  const demoExpiresAt = rec?.demo_expires_at ? new Date(rec.demo_expires_at) : null;
+  const diffMs = demoExpiresAt ? demoExpiresAt.getTime() - now.getTime() : null;
+  const demoExpired = !isPaidCandidate && demoExpiresAt && diffMs <= 0;
+  const demoRemainingSec = !isPaidCandidate && demoExpiresAt ? Math.max(0, Math.floor(diffMs / 1000)) : null;
+
   if (!booths.length) {
     return res.json({
       success: true, isSample: true,
       account: account(rec, u),
+      demoExpired: !!demoExpired,
+      demoActive: !isPaidCandidate && !demoExpired && !!demoExpiresAt,
+      demoExpiresAt,
+      demoRemainingSec,
       sample: {
         booths: SAMPLE_BOOTHS,
         voters: SAMPLE_VOTERS,
@@ -90,6 +101,10 @@ export async function home(req, res) {
       paymentPending: true,
       account: account(rec, u),
       boothCount: booths.length,
+      demoExpired: !!demoExpired,
+      demoActive: !isPaidCandidate && !demoExpired && !!demoExpiresAt,
+      demoExpiresAt,
+      demoRemainingSec,
     });
   }
 

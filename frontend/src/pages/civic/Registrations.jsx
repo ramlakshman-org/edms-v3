@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Phone, MessageCircle, Eye, Pencil, Search, X, Mail, Mic, Download, MapPin, SlidersHorizontal } from 'lucide-react';
 import api from '../../api/client.js';
 import { PageHeader, Card, Pill, inr } from '../../civic/kit.jsx';
-import { DataTable, Pager, Select, Button, RowMenu, csvOf, download, fmtDate, waLink } from '../../civic/ui.jsx';
+import { DataTable, Pager, Select, Button, RowMenu, csvOf, download, fmtDate, fmtDateTime, waLink } from '../../civic/ui.jsx';
 import { ALL_DISTRICTS } from '../../data/wardLocalBodies.js';
 import { SHOWS, showById, loadAllRegistrations, paidMobiles } from '../../civic/needs.js';
 
@@ -84,6 +84,26 @@ export default function Registrations({ isTeam = false }) {
     } },
     // only a positive or odd state earns a pill; 'No' on every row was noise (UX4). Passcodes live on the detail page.
     { key: 'paid_status', label: 'Paid', render: (r) => (r.paid_status === 'No' || !r.paid_status ? <span className="cv-td-quiet">—</span> : <Pill tone={paidTone(r.paid_status)} dot>{paidLabel(r.paid_status)}</Pill>) },
+    {
+      key: 'portal_access',
+      label: 'Portal Access',
+      wrap: 130,
+      render: (r) => {
+        if (!r.has_logged_in) {
+          return <span style={{ fontSize: 11, color: '#94a3b8' }}>⚪ Never logged in</span>;
+        }
+        return (
+          <div className="cv-two">
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#16a34a' }}>
+              🟢 Logged in ({r.login_count || 1}x)
+            </span>
+            <span className="cv-muted" style={{ fontSize: 10.5 }}>
+              {r.last_login_at ? fmtDateTime(r.last_login_at) : 'Active'}
+            </span>
+          </div>
+        );
+      },
+    },
     { key: 'requests', label: 'Requests', medium: false, mobile: false, render: (r) => (r.requests?.length ? <span className="cv-reqs">{r.requests.map((q, i) => <span key={i} className={`cv-req cv-req--${q.service_type}`} title={`${q.service_type} · ${q.status || ''}`}>{reqIcon(q.service_type)}</span>)}</span> : <span className="cv-muted">—</span>) },
     { key: 'actions', label: '', render: (r) => (
       <RowMenu items={[

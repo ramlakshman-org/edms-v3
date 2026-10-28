@@ -92,11 +92,11 @@ export async function list(req, res) {
 
     const mobiles = docs.map((d) => clean(d.mobile)).filter(Boolean);
 
-    // Passcode, source & payment status fallback: look up user logins by mobile in one query.
+    // Passcode, source, login activity & payment status fallback: look up user logins by mobile in one query.
     const users = mobiles.length
       ? await db.collection('tbl_user').find(
           { mobile_no: { $in: docs.map((d) => d.mobile).filter(Boolean) } },
-          { projection: { mobile_no: 1, password_str: 1, paid_status: 1, transaction_id: 1, assembly_id: 1, assembly_name: 1, booths: 1, source: 1, registered_via: 1 } },
+          { projection: { mobile_no: 1, password_str: 1, paid_status: 1, transaction_id: 1, assembly_id: 1, assembly_name: 1, booths: 1, source: 1, registered_via: 1, last_login_at: 1, first_login_at: 1, login_count: 1, demo_expires_at: 1 } },
         ).toArray()
       : [];
     const userByMobile = {};
@@ -163,6 +163,11 @@ export async function list(req, res) {
         paid_status: paidFlag(uRec?.paid_status),
         transaction_id: uRec?.transaction_id || null,
         created_at: r.created_at || '-',
+        last_login_at: uRec?.last_login_at || r.last_login_at || null,
+        first_login_at: uRec?.first_login_at || r.first_login_at || null,
+        login_count: uRec?.login_count || r.login_count || 0,
+        has_logged_in: !!(uRec?.last_login_at || r.has_logged_in),
+        demo_expires_at: uRec?.demo_expires_at || null,
         // just the service types for the compact icon column
         requests: (reqByMobile[cm] || []).map((x) => x.service_type),
       };

@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { markLeadRegistered, recordWebsiteEvent, markCrmLeadStatus } from '../services/leads.js';
-import { assignAgentRoundRobin } from './whatsappController.js';
+import { assignAgentRoundRobin, dispatchOvernightLeads } from './whatsappController.js';
 import { getFeatureSettings, isOnFor, WEBSITE_LOGIN_TEXT, BOT_NUMBER } from '../services/features.js';
 import { onRegistered } from '../services/reminders.js';
 import { signToken, revokeToken } from '../middleware/auth.js';
@@ -125,6 +125,72 @@ export async function login(req, res) {
     }
 
     const hasBooths = Array.isArray(user.booths) && user.booths.length > 0;
+    const now = new Date();
+    const isPaidUser = isPaid(user.paid_status);
+    const cleanMobile = String(user.mobile_no || '').replace(/\D/g, '').slice(-10);
+
+    // Track Universal Login Activity
+    const userUpdates = {
+      last_login_at: now,
+      updated_at: now,
+    };
+    if (!user.first_login_at) userUpdates.first_login_at = now;
+
+    let demoExpired = false;
+    let demoExpiresAt = user.demo_expires_at ? new Date(user.demo_expires_at) : null;
+    let demoRemainingSec = null;
+
+    // Candidate / Ward accounts (Groups 4, 6, 11, 3): 24h Demo Timer & Access Tracking
+    const isCandidate = [ROLES.BOOTH, ROLES.BOOTH_ALT, ROLES.WARD, ROLES.MLA].includes(groupId);
+    if (isCandidate) {
+      if (!isPaidUser) {
+        if (!user.demo_first_login_at) {
+          // Clock starts on First Login!
+          userUpdates.demo_first_login_at = now;
+          demoExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+          userUpdates.demo_expires_at = demoExpiresAt;
+        }
+        if (demoExpiresAt) {
+          const diffMs = demoExpiresAt.getTime() - now.getTime();
+          demoExpired = diffMs <= 0;
+          demoRemainingSec = Math.max(0, Math.floor(diffMs / 1000));
+        }
+      }
+
+      // Sync activation and demo status to tbl_enquiry and tbl_crm_conversation
+      if (cleanMobile.length === 10) {
+        db.collection('tbl_enquiry').updateOne(
+          { mobile: cleanMobile },
+          { $set: { has_logged_in: true, last_login_at: now }, $inc: { login_count: 1 } }
+        ).catch(() => {});
+
+        db.collection('tbl_crm_conversation').updateOne(
+          { clean_mobile: cleanMobile },
+          {
+            $set: {
+              has_logged_in: true,
+              last_dashboard_access_at: now,
+              first_login_at: user.first_login_at || now,
+              demo_expires_at: demoExpiresAt,
+              demo_expired: demoExpired,
+            },
+            $inc: { login_count: 1 },
+          }
+        ).catch(() => {});
+      }
+    }
+
+    // Telecaller accounts (Groups 7, 12, 9): Trigger morning drain of unassigned leads
+    const isTelecaller = [ROLES.CRM_AGENT, ROLES.TELECALLER, ROLES.TELE].includes(groupId);
+    if (isTelecaller) {
+      dispatchOvernightLeads(db).catch((e) => console.error('[dispatchOvernightLeads on login]:', e.message));
+    }
+
+    await db.collection('tbl_user').updateOne(
+      { _id: user._id },
+      { $set: userUpdates, $inc: { login_count: 1 } }
+    ).catch(() => {});
+
     const claims = {
       sub: String(user._id),
       name: user.first_name || user.mobile_no,
@@ -156,6 +222,13 @@ export async function login(req, res) {
         candidate_type: user.candidate_type,
         booths: user.booths || [],
         paid_status: paidFlag(user.paid_status), // 'Yes'/'No' whatever the record says (1, true, 'yes'…)
+        is_paid: isPaidUser,
+        demo_active: !isPaidUser && !demoExpired && !!demoExpiresAt,
+        demo_expired: demoExpired,
+        demo_expires_at: demoExpiresAt,
+        demo_remaining_sec: demoRemainingSec,
+        first_login_at: user.first_login_at || now,
+        last_login_at: now,
       },
     });
   } catch (e) {

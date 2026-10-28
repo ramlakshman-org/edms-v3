@@ -244,25 +244,35 @@ export function webhookVerification(req, res) {
  * stable order. New members get a higher `id`, so they naturally join the end
  * of the rotation and are included in round-robin automatically.
  */
-export async function getActiveAgents(db) {
+export async function getActiveAgents(db, { onlineOnly = false } = {}) {
+  const query = { user_group_id: ROLES.CRM_AGENT, is_active: 1 };
+  if (onlineOnly) {
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    query.last_login_at = { $gte: startToday };
+  }
   const agents = await db
     .collection('tbl_user')
-    .find({ user_group_id: ROLES.CRM_AGENT, is_active: 1 })
+    .find(query)
     .sort({ id: 1, _id: 1 })
     .toArray();
   return agents.map((a) => ({
     id: String(a._id),
     name: [a.first_name, a.last_name].filter(Boolean).join(' ') || a.mobile_no || 'Agent',
+    last_login_at: a.last_login_at || null,
   }));
 }
 
 /**
- * Pick the next CRM agent in round-robin order. A pointer to the last-assigned
- * agent is persisted in tbl_crm_settings so assignment continues across
- * requests/restarts. Returns null when no active agents exist.
+ * Pick the next CRM agent in round-robin order.
+ * By default (requireOnline: true), only picks agents who have logged in today.
+ * If no agents are online, returns null so the lead is safely pooled as unassigned.
  */
-export async function assignAgentRoundRobin(db) {
-  const agents = await getActiveAgents(db);
+export async function assignAgentRoundRobin(db, { requireOnline = true } = {}) {
+  let agents = await getActiveAgents(db, { onlineOnly: requireOnline });
+  if (!agents.length && !requireOnline) {
+    agents = await getActiveAgents(db, { onlineOnly: false });
+  }
   if (!agents.length) return null;
 
   const state = await db.collection('tbl_crm_settings').findOne({ _id: 'round_robin' });
@@ -281,6 +291,58 @@ export async function assignAgentRoundRobin(db) {
     { upsert: true }
   );
   return agent;
+}
+
+/**
+ * Automatically dispatches pooled unassigned overnight leads to online agents
+ * when an agent logs in or comes on duty.
+ */
+export async function dispatchOvernightLeads(db) {
+  try {
+    const unassigned = await db.collection('tbl_crm_conversation').find({
+      $or: [
+        { assigned_agent_id: null },
+        { assigned_agent_id: { $exists: false } },
+        { assigned_agent_id: '' }
+      ],
+      archived: { $ne: true }
+    }).toArray();
+
+    if (!unassigned.length) return 0;
+
+    let dispatched = 0;
+    const now = new Date();
+    for (const lead of unassigned) {
+      const agent = await assignAgentRoundRobin(db, { requireOnline: true });
+      if (!agent) break;
+
+      await db.collection('tbl_crm_conversation').updateOne(
+        { _id: lead._id },
+        {
+          $set: {
+            assigned_agent_id: agent.id,
+            assigned_agent_name: agent.name,
+            assigned_at: now,
+            assigned_by: 'morning_auto_dispatch',
+            updated_at: now
+          },
+          $push: {
+            status_history: {
+              status: lead.lead_status || 'new',
+              note: `Lead auto-dispatched from overnight pool to online telecaller ${agent.name}`,
+              by: 'Shift Engine',
+              at: now
+            }
+          }
+        }
+      );
+      dispatched++;
+    }
+    return dispatched;
+  } catch (e) {
+    console.error('[dispatchOvernightLeads error]:', e.message);
+    return 0;
+  }
 }
 
 /**

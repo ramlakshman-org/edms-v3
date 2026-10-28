@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, MapPin, Megaphone, BarChart3, Crown, Hourglass, Lock, Sparkles, CircleAlert, Info, Phone, Map, TrendingUp, ArrowRight } from 'lucide-react';
+import { Users, MapPin, Megaphone, BarChart3, Crown, Hourglass, Lock, Sparkles, CircleAlert, Info, Phone, Map, TrendingUp, ArrowRight, MessageCircle, Clock } from 'lucide-react';
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import PurchaseModal from '../../components/PurchaseModal.jsx';
@@ -91,6 +91,52 @@ export default function CandidateHome() {
     <div className="cv-page">
       <PageHeader title={`Welcome, ${name}`} subtitle={where || 'Your campaign at a glance'} />
       {err && <Alert tone="bad"><CircleAlert size={16} /> {err}</Alert>}
+
+      {/* 24-Hour Demo Paywall Screen */}
+      {!loading && home?.demoExpired && !status.paid && (
+        <div style={{ background: '#fef2f2', border: '2px solid #ef4444', borderRadius: 12, padding: '20px 24px', marginBottom: 20 }}>
+          <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+            <Lock size={32} style={{ color: '#dc2626', flexShrink: 0, marginTop: 2 }} />
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: '0 0 6px', fontSize: 18, color: '#991b1b', fontWeight: 700 }}>
+                Your 24-Hour Demo Preview has Expired
+              </h3>
+              <p style={{ margin: '0 0 14px', fontSize: 14, color: '#7f1d1d', lineHeight: 1.5 }}>
+                Your preview access to sample booth data has concluded. To permanently unlock full voter rolls, booth voter slips, and cadre tracking for your constituency, please contact our support team or upgrade to the <strong>Pro Plan</strong>.
+              </p>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <a
+                  href={`https://wa.me/917904759268?text=${encodeURIComponent(`Hi EDMS Team, my 24-hour demo preview expired for mobile ${user?.mobile_no || user?.mobile}. Please help me upgrade my constituency to the Pro Plan.`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="cv-btn cv-btn--primary"
+                  style={{ background: '#16a34a', borderColor: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: 8 }}
+                >
+                  <MessageCircle size={16} /> Contact Support on WhatsApp
+                </a>
+                <Button variant="primary" icon={Sparkles} onClick={() => setPay(true)}>
+                  Upgrade to Pro Plan
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Active Demo Countdown Banner */}
+      {!loading && !home?.demoExpired && home?.demoActive && !status.paid && (
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#1e40af', fontSize: 13.5 }}>
+            <Clock size={16} style={{ flexShrink: 0 }} />
+            <span>
+              <strong>24-Hour Demo Preview:</strong> {Math.floor((home.demoRemainingSec || 0) / 3600)}h {Math.floor(((home.demoRemainingSec || 0) % 3600) / 60)}m remaining before sample access locks.
+            </span>
+          </div>
+          <button type="button" className="cv-btn cv-btn--ghost cv-btn--sm" onClick={() => setPay(true)} style={{ color: '#1d4ed8', fontWeight: 600 }}>
+            <Sparkles size={13} /> Upgrade to Pro
+          </button>
+        </div>
+      )}
 
       {/* Plan state */}
       {!loading && state === 'sample' && (
@@ -265,7 +311,18 @@ export default function CandidateHome() {
 
       <div className="cv-grid-2-1">
         <Card title={isSample ? 'Sample voters' : 'Your booths'} meta={isSample ? '705 fictional records so you can try search and filters' : 'Tap a booth to open its voters'} flush>
-          {isSample
+          {home?.demoExpired && !status.paid ? (
+            <div style={{ padding: '36px 20px', textAlign: 'center', background: '#f8fafc' }}>
+              <Lock size={32} style={{ color: '#94a3b8', margin: '0 auto 10px', display: 'block' }} />
+              <strong style={{ fontSize: 15, color: '#334155' }}>Voter Data Locked</strong>
+              <p className="cv-muted" style={{ fontSize: 13, marginTop: 4 }}>
+                Activate your Pro Plan to view and download full voter lists for your booths.
+              </p>
+              <div style={{ marginTop: 14 }}>
+                <Button size="sm" icon={Sparkles} onClick={() => setPay(true)}>Activate Pro Plan</Button>
+              </div>
+            </div>
+          ) : isSample
             ? <DataTable columns={sampleColumns} rows={sample} rowKey={(r) => r.EPIC_NO} loading={loading} empty="Sample data is loading…" />
             : <DataTable columns={boothColumns} rows={booths} rowKey={(b) => `${b.assembly_no}-${b.part_no}`} loading={loading} empty="No booths assigned yet." />}
         </Card>

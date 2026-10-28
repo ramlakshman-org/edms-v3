@@ -308,8 +308,28 @@ export default function TelecallerDashboard({ adminView = false }) {
                     {leaderboard.map((a) => (
                       <tr key={a.id}>
                         <td>
-                          <strong>{a.name}</strong>
-                          <div className="cv-muted" style={{ fontSize: 11 }}>{a.total_leads} total leads</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <strong>{a.name}</strong>
+                            <span
+                              style={{
+                                fontSize: 10.5,
+                                fontWeight: 600,
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                background: a.presence_status === 'active' ? '#dcfce7' : a.presence_status === 'idle' ? '#fef3c7' : '#f1f5f9',
+                                color: a.presence_status === 'active' ? '#15803d' : a.presence_status === 'idle' ? '#b45309' : '#64748b',
+                                border: `1px solid ${a.presence_status === 'active' ? '#bbf7d0' : a.presence_status === 'idle' ? '#fde68a' : '#e2e8f0'}`,
+                              }}
+                            >
+                              {a.presence_status === 'active' ? '🟢 Active' : a.presence_status === 'idle' ? `🟡 ${a.presence_label || 'Idle'}` : '⚪ Offline'}
+                            </span>
+                          </div>
+                          <div className="cv-muted" style={{ fontSize: 11 }}>
+                            {a.total_leads} total leads
+                            {a.last_login_at && (
+                              <span> · Login: {new Date(a.last_login_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            )}
+                          </div>
                         </td>
                         <td style={{ textAlign: 'right', fontWeight: 600, color: a.calls_today >= 30 ? '#16a34a' : '#2563eb' }}>
                           {a.calls_today}
