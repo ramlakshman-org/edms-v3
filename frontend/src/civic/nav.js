@@ -52,7 +52,7 @@ export const ADMIN_NAV = [
   {
     section: 'Telecalling',
     items: [
-      { to: '/team/dashboard', label: 'Call Center Dashboard', icon: LayoutGrid },
+      { to: '/team/view', label: 'Telecalling Overview', icon: LayoutGrid },
       { to: '/team/crm', label: 'Telecalling Workspace', icon: PhoneCall },
       { to: '/team/members', label: 'Team Members', icon: Headphones },
       { to: '/team/assignment', label: 'Lead Assignment', icon: Shuffle },
