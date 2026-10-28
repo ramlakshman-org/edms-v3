@@ -362,10 +362,6 @@ export async function register(req, res) {
         $setOnInsert: {
           clean_mobile: mobile,
           source: 'website',
-          assigned_agent_id: assignedAgent ? assignedAgent.id : null,
-          assigned_agent_name: assignedAgent ? assignedAgent.name : null,
-          assigned_at: assignedAgent ? new Date() : null,
-          assigned_by: assignedAgent ? 'round_robin' : null,
           taken: false,
           unread_count: 0,
           created_at: new Date(),

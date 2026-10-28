@@ -1,4 +1,5 @@
 import { getAppDb } from '../config/db.js';
+import { toObjectId } from '../utils/objectId.js';
 import { findById } from '../models/userModel.js';
 import { click2call, fetchUserCdr } from '../services/telecmiService.js';
 import { loadCrmConfig, saveCrmConfig } from '../services/crmConfig.js';
