@@ -362,7 +362,12 @@ export async function socialMediaRequest(req, res) {
   }
 }
 
-export function sampleVoters(req, res) {
+export async function sampleVoters(req, res) {
+  const rec = await wardRecord(req);
+  if (rec && !isPaid(rec.paid_status) && rec.demo_expires_at && new Date(rec.demo_expires_at) < new Date()) {
+    return res.json({ success: true, total: 0, page: 1, pageSize: 10, rows: [], demoExpired: true });
+  }
+
   const search = (req.query.search || '').trim().toLowerCase();
   const page = Number(req.query.page || 1);
   const pageSize = Number(req.query.pageSize || 10);
