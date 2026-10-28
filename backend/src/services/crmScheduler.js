@@ -6,6 +6,7 @@ import { loadCrmConfig } from './crmConfig.js';
 import { runDistribute } from '../controllers/crmController.js';
 import { sendWactoText, wactoConfigured } from './wactoService.js';
 import { sendText } from './whatsappService.js';
+import { getActiveAgents } from '../controllers/whatsappController.js';
 
 const weekOf = (d) => {
   const first = new Date(d.getFullYear(), 0, 1);
@@ -142,6 +143,61 @@ async function tick() {
           { upsert: true }
         );
         await dispatchDailyDigest(db);
+      }
+    }
+
+    // 3. Self-Healing Lead SLA Engine (Active during calling hours: 9 AM - 8 PM)
+    // Automatically reassigns leads that have been assigned for >3 hours without a call attempt.
+    const currentHour = now.getHours();
+    if (currentHour >= 9 && currentHour < 20) {
+      const threeHoursAgo = new Date(Date.now() - 3 * 3600 * 1000);
+      const staleLeads = await db.collection('tbl_crm_conversation').find({
+        assigned_agent_id: { $nin: [null, ''] },
+        lead_status: { $in: ['new', 'none', 'assigned'] },
+        call_attempts: { $in: [0, null] },
+        $or: [
+          { assigned_at: { $lt: threeHoursAgo } },
+          { assigned_at: { $exists: false }, created_at: { $lt: threeHoursAgo } },
+        ],
+      }).limit(20).toArray();
+
+      if (staleLeads.length > 0) {
+        const agents = await getActiveAgents(db);
+        if (agents.length > 1) {
+          for (const lead of staleLeads) {
+            const pool = agents.filter((a) => a.id !== String(lead.assigned_agent_id));
+            if (pool.length) {
+              const nextAgent = pool[Math.floor(Math.random() * pool.length)];
+              const prevName = lead.assigned_agent_name || 'telecaller';
+              const slaNote = `[SLA Timeout: untouched for >3h with ${prevName}]`;
+              await db.collection('tbl_crm_conversation').updateOne(
+                { clean_mobile: lead.clean_mobile },
+                {
+                  $set: {
+                    assigned_agent_id: nextAgent.id,
+                    assigned_agent_name: nextAgent.name,
+                    assigned_at: now,
+                    assigned_by: 'sla_timeout',
+                    updated_at: now,
+                  },
+                  $push: {
+                    status_history: {
+                      status: 'assigned',
+                      note: slaNote,
+                      by: 'System (SLA)',
+                      at: now,
+                    },
+                  },
+                }
+              );
+              await db.collection('tbl_leads').updateOne(
+                { mobile: lead.clean_mobile },
+                { $set: { assigned_agent_id: nextAgent.id, assigned_agent_name: nextAgent.name, updated_at: now } }
+              ).catch(() => {});
+              console.log(`[crm-scheduler SLA] Auto-reassigned stale lead ${lead.clean_mobile} from ${prevName} to ${nextAgent.name}`);
+            }
+          }
+        }
       }
     }
   } catch (e) {

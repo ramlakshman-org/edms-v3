@@ -1,3 +1,5 @@
+import { assignAgentRoundRobin } from '../controllers/whatsappController.js';
+
 // Incomplete registrations (Ram, 2026-10-15): everyone who messages the WhatsApp bot or finishes step 1 of the website
 // form gets one row in tbl_leads (keyed by the 10-digit mobile), from the first message. It records how far they got,
 // and moves to "registered" when they finish. Rows are never deleted: the admin marks them Interested / Not interested.
@@ -66,6 +68,28 @@ export async function touchLead(db, { mobile, name = '', source, step = 'contact
     try {
       const stepLabel = LEAD_STEPS[step]?.label || step;
       const contactName = String(name || resultRow?.web_name || resultRow?.wa_name || '').trim() || `Lead ${m.slice(-4)}`;
+
+      // Instant Round-Robin assignment for new incoming leads
+      let assignedAgent = null;
+      const existingCrm = await db.collection('tbl_crm_conversation').findOne({ clean_mobile: m }, { projection: { assigned_agent_id: 1 } });
+      if (!existingCrm?.assigned_agent_id) {
+        assignedAgent = await assignAgentRoundRobin(db).catch(() => null);
+      }
+
+      const crmSet = {
+        contact_name: contactName,
+        step,
+        step_label: stepLabel,
+        last_inbound_at: at,
+        updated_at: at,
+      };
+      if (assignedAgent && !existingCrm?.assigned_agent_id) {
+        crmSet.assigned_agent_id = assignedAgent.id;
+        crmSet.assigned_agent_name = assignedAgent.name;
+        crmSet.assigned_at = at;
+        crmSet.assigned_by = 'round_robin';
+      }
+
       await db.collection('tbl_crm_conversation').updateOne(
         { clean_mobile: m },
         {
@@ -73,8 +97,10 @@ export async function touchLead(db, { mobile, name = '', source, step = 'contact
             clean_mobile: m,
             source: source || 'website',
             lead_status: 'new',
-            assigned_agent_id: null,
-            assigned_agent_name: null,
+            assigned_agent_id: assignedAgent ? assignedAgent.id : null,
+            assigned_agent_name: assignedAgent ? assignedAgent.name : null,
+            assigned_at: assignedAgent ? at : null,
+            assigned_by: assignedAgent ? 'round_robin' : null,
             taken: false,
             unread_count: 0,
             last_message: `Lead captured via ${source} (${stepLabel})`,
@@ -84,16 +110,14 @@ export async function touchLead(db, { mobile, name = '', source, step = 'contact
             created_at: at,
             status_history: [{ status: 'new', note: `Incomplete lead created from ${source} (${stepLabel})`, by: 'System', at, source }],
           },
-          $set: {
-            contact_name: contactName,
-            step,
-            step_label: stepLabel,
-            last_inbound_at: at,
-            updated_at: at,
-          },
+          $set: crmSet,
         },
         { upsert: true }
       );
+
+      if (assignedAgent && !resultRow?.assigned_agent_id) {
+        await coll.updateOne({ mobile: m }, { $set: { assigned_agent_id: assignedAgent.id, assigned_agent_name: assignedAgent.name, updated_at: at } }).catch(() => {});
+      }
     } catch (e) {
       console.error('[touchLead crm sync error]:', e);
     }

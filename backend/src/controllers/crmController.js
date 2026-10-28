@@ -82,7 +82,7 @@ export async function resolveWindow(db, cleanMobile, conv = null) {
 export async function listConversations(req, res) {
   try {
     const db = getAppDb();
-    const { search = '', status = 'all', lead_status = 'all', page = 1, limit = 50, hide_snoozed } = req.query;
+    const { search = '', status = 'all', lead_status = 'all', page = 1, limit = 50, hide_snoozed, filter } = req.query;
 
     const query = {};
     const and = [];
@@ -97,6 +97,26 @@ export async function listConversations(req, res) {
     }
     if (status !== 'all') query.status = status;
     if (lead_status !== 'all') query.lead_status = lead_status;
+
+    if (filter === 'overdue_callbacks') {
+      const overdueCutoff = new Date(Date.now() - 24 * 3600 * 1000);
+      and.push({
+        lead_status: { $in: ['will_call_back', 'call_back'] },
+        $or: [
+          { next_call_at: { $lt: new Date() } },
+          { next_call_at: { $exists: false }, updated_at: { $lt: overdueCutoff } },
+        ],
+      });
+    } else if (filter === 'short_calls') {
+      and.push({
+        status_history: {
+          $elemMatch: {
+            status: { $in: ['call_completed', 'first_call_complete', 'second_call_complete', 'third_call_complete'] },
+            duration: { $lt: 10, $gte: 0 },
+          },
+        },
+      });
+    }
 
     if (hide_snoozed === 'true') {
       and.push({
@@ -299,7 +319,11 @@ export async function getConversationHistory(req, res) {
       lead_status: conv?.lead_status || 'none',
       agent_notes: conv?.agent_notes || '',
       assigned_agent_name: conv?.assigned_agent_name || conv?.last_handled_by || '-',
-      status_history: Array.isArray(conv?.status_history) ? conv.status_history : [],
+      status_history: (Array.isArray(conv?.status_history) ? conv.status_history : []).map((h) => {
+        const isCall = ['call_completed', 'first_call_complete', 'second_call_complete', 'third_call_complete'].includes(h.status);
+        const isShort = isCall && typeof h.duration !== 'undefined' && Number(h.duration) < 10;
+        return { ...h, short_call: isShort };
+      }),
     };
 
     // WhatsApp 24h/72h messaging window (drives the CRM chat timer & lock).
@@ -698,21 +722,35 @@ export async function updateLeadStatus(req, res) {
       { $set: updateDoc, $push: { status_history: historyEntry } }
     );
 
-    // --- Task 1: Instant Post-Call WhatsApp Drop ---
+    // --- Multi-Channel Automation: Instant Post-Call WhatsApp Drop ---
     let waSent = false;
     let waError = null;
     let waText = '';
 
-    if (req.body.send_whatsapp) {
-      const firstName = String(candidateName).trim().split(/\s+/)[0] || 'வணக்கம்';
-      const waType = req.body.whatsapp_type || (isRegisteredUser ? 'pro_pitch' : 'incomplete_guide');
+    // Automatically trigger follow-up WhatsApp message if explicitly requested OR for key call outcomes:
+    // • interested -> registration / pro upgrade details
+    // • not_answered / switch_off (attempt 1) -> polite missed-call callback invitation
+    const shouldAutoSend = req.body.send_whatsapp === true || (
+      req.body.send_whatsapp !== false && (
+        ['interested', 'first_call_complete'].includes(effectiveStatus) ||
+        ((effectiveStatus === 'not_answered' || effectiveStatus === 'switch_off') && currentAttempts === 1)
+      )
+    );
 
-      if (waType === 'incomplete_guide') {
-        waText = `வணக்கம் ${firstName}! 🗳️\n\nEDMS Election Management Portal-ல் உங்கள் பூத் மற்றும் வாக்காளர் விவரங்களை அணுக, கீழ்க்கண்ட லிங்க் மூலம் பதிவை உடனே முடிக்கவும்:\n👉 https://tnedms.com/register?mobile=${cleanMobile}\n\nஉங்களுக்கு ஏதேனும் உதவி தேவைப்பட்டால் இந்த எண்ணில் பதிலளிக்கவும் அல்லது எங்களை அழைக்கவும்.`;
-      } else if (waType === 'pro_pitch') {
-        waText = `வணக்கம் ${firstName}! 🚀\n\nநன்றி! EDMS Pro Plan மூலம் நீங்கள் பெறக்கூடிய நன்மைகள்:\n✅ உங்கள் தொகுதி/வார்டு முழு வாக்காளர் பட்டியல் & குடும்ப விவரங்கள்\n✅ பூத் வாரியான வாக்காளர் சீட்டு பிரிண்டிங் (Booth Slips)\n✅ களப்பணியாளர் மொபைல் ஆப் (Ward Surveyor App)\n\n👉 லாகின் செய்ய: https://tnedms.com/login\n💳 உடனடி ஆக்டிவேஷன்: UPI மூலம் செலுத்தலாம் (UPI ID: 9940136163@okbizaxis)\n\nஏதேனும் சந்தேகம் இருந்தால் உடனடியாக அழைக்கவும்!`;
-      } else {
-        waText = String(req.body.whatsapp_text || '').trim();
+    if (shouldAutoSend) {
+      const firstName = String(candidateName).trim().split(/\s+/)[0] || 'வணக்கம்';
+      const baseUrl = process.env.PUBLIC_APP_URL || process.env.APP_URL || 'https://tnedms.online';
+
+      if (effectiveStatus === 'interested') {
+        if (isRegisteredUser) {
+          waText = `வணக்கம் ${firstName}! 🚀\n\nநன்றி! EDMS Pro Plan மூலம் நீங்கள் பெறக்கூடிய நன்மைகள்:\n✅ உங்கள் தொகுதி முழு வாக்காளர் பட்டியல் & குடும்ப விவரங்கள்\n✅ பூத் வாரியான வாக்காளர் சீட்டு பிரிண்டிங் (Booth Slips)\n✅ களப்பணியாளர் மொபைல் ஆப் (Ward Surveyor App)\n\n👉 லாகின் செய்ய: ${baseUrl}/login\n💳 உடனடி ஆக்டிவேஷன்: UPI மூலம் செலுத்தலாம் (UPI ID: 9940136163@okbizaxis)\n\nஏதேனும் உதவிக்கு: 📞 +91 79047 59268`;
+        } else {
+          waText = `வணக்கம் ${firstName}! 🗳️\n\nEDMS Election Management Portal-ல் உங்கள் பூத் மற்றும் வாக்காளர் விவரங்களை அணுக, கீழ்க்கண்ட லிங்க் மூலம் பதிவை உடனே முடிக்கவும்:\n👉 ${baseUrl}/register?mobile=${cleanMobile}\n\nஉங்களுக்கு ஏதேனும் உதவி தேவைப்பட்டால் இந்த எண்ணில் பதிலளிக்கவும் அல்லது எங்களை அழைக்கவும்: 📞 +91 79047 59268`;
+        }
+      } else if (effectiveStatus === 'not_answered' || effectiveStatus === 'switch_off') {
+        waText = `வணக்கம் ${firstName}! 🗳️\n\nTN EDMS தேர்தல் மேலாண்மை தளத்திலிருந்து உங்களைத் தொடர்பு கொள்ள முயற்சித்தோம். உங்கள் பூத் வாக்காளர் பட்டியல் மற்றும் களப்பணி ஆப் விவரங்களை அறிய, இந்த எண்ணில் பதிலளிக்கவும் அல்லது எங்களை அழைக்கவும்: 📞 +91 79047 59268`;
+      } else if (req.body.whatsapp_text) {
+        waText = String(req.body.whatsapp_text).trim();
       }
 
       if (waText) {
@@ -1241,19 +1279,39 @@ export async function teamStats(req, res) {
       last7.push({ key: d.toISOString().slice(0, 10), label: d.toLocaleDateString('en-US', { weekday: 'short' }), count: 0 });
     }
     const last7Map = Object.fromEntries(last7.map((x) => [x.key, x]));
-    let calls_today = 0, calls_total = 0;
+    let calls_today = 0, calls_total = 0, short_calls = 0;
     for (const c of convos) {
       for (const h of (c.status_history || [])) {
         if (CALL_STATUSES.includes(h.status)) {
           calls_total += 1;
           const at = new Date(h.at);
-          if (at >= startToday) calls_today += 1;
+          if (at >= startToday) {
+            calls_today += 1;
+            if (typeof h.duration !== 'undefined' && Number(h.duration) < 10) short_calls += 1;
+          }
           const key = at.toISOString().slice(0, 10);
           if (last7Map[key]) last7Map[key].count += 1;
         }
       }
     }
-    return res.json({ success: true, stats: { total, interested, not_interested, converted, contacted, pending, conversion_rate, pro, registered, calls_today, calls_total, status_breakdown, calls_last_7_days: last7.map(({ label, count, key }) => ({ label, count, key })) } });
+
+    // Overdue Callbacks calculation (>24h since promised or past callback time)
+    const overdueCutoff = new Date(Date.now() - 24 * 3600 * 1000);
+    const overdue_callbacks = convos.filter((c) => {
+      if (c.lead_status !== 'will_call_back' && c.lead_status !== 'call_back') return false;
+      const nextCall = c.next_call_at ? new Date(c.next_call_at) : (c.updated_at ? new Date(new Date(c.updated_at).getTime() + 24 * 3600 * 1000) : null);
+      return nextCall && nextCall < now;
+    }).length;
+
+    return res.json({
+      success: true,
+      stats: {
+        total, interested, not_interested, converted, contacted, pending,
+        conversion_rate, pro, registered, calls_today, calls_total, short_calls,
+        overdue_callbacks, status_breakdown,
+        calls_last_7_days: last7.map(({ label, count, key }) => ({ label, count, key })),
+      },
+    });
   } catch (err) {
     console.error('[CRM teamStats Error]:', err);
     return res.status(500).json({ success: false, message: err.message || 'Failed to load stats.' });
@@ -1584,6 +1642,150 @@ export async function sendDailyDigestNow(req, res) {
   } catch (err) {
     console.error('[CRM sendDailyDigestNow Error]:', err);
     return res.status(500).json({ success: false, message: err.message || 'Failed to send digest.' });
+  }
+}
+
+/**
+ * POST /api/crm/reassign-agent-leads — One-click reassign an agent's uncontacted/all leads
+ * across remaining active telecallers (Round-Robin). Admin only.
+ */
+export async function reassignAgentLeads(req, res) {
+  try {
+    if (isCrmAgent(req)) return res.status(403).json({ success: false, message: 'Not authorized.' });
+    const db = getAppDb();
+    const { source_agent_id, uncontacted_only = true } = req.body;
+    if (!source_agent_id) return res.status(400).json({ success: false, message: 'source_agent_id is required.' });
+
+    const sourceAgent = await db.collection('tbl_user').findOne({ _id: toObjectId(source_agent_id) }).catch(() => null)
+      || await db.collection('tbl_user').findOne({ user_name: source_agent_id });
+    const sourceName = sourceAgent ? [sourceAgent.first_name, sourceAgent.last_name].filter(Boolean).join(' ') || sourceAgent.user_name : 'Agent';
+
+    const allAgents = await getActiveAgents(db);
+    const targetAgents = allAgents.filter((a) => a.id !== String(source_agent_id));
+    if (!targetAgents.length) {
+      return res.status(400).json({ success: false, message: 'No other active telecallers available to receive reassigned leads.' });
+    }
+
+    const filter = {
+      assigned_agent_id: String(source_agent_id),
+      ...(uncontacted_only ? { lead_status: { $in: ['none', 'new', 'assigned'] }, call_attempts: { $in: [0, null] } } : {}),
+    };
+
+    const convos = await db.collection('tbl_crm_conversation').find(filter, { projection: { clean_mobile: 1 } }).toArray();
+    if (!convos.length) {
+      return res.json({ success: true, count: 0, message: `No ${uncontacted_only ? 'untouched ' : ''}leads found for ${sourceName}.` });
+    }
+
+    const now = new Date();
+    let idx = 0;
+    const ops = convos.map((c) => {
+      const tgt = targetAgents[idx % targetAgents.length];
+      idx += 1;
+      return {
+        updateOne: {
+          filter: { clean_mobile: c.clean_mobile },
+          update: {
+            $set: { assigned_agent_id: tgt.id, assigned_agent_name: tgt.name, assigned_at: now, assigned_by: 'admin_reassign', updated_at: now },
+            $push: { status_history: { status: 'assigned', note: `Reassigned from ${sourceName} by Admin`, by: req.user?.name || 'Admin', at: now } },
+          },
+        },
+      };
+    });
+    await db.collection('tbl_crm_conversation').bulkWrite(ops, { ordered: false });
+
+    // Also sync tbl_leads
+    const leadOps = convos.map((c, i) => {
+      const tgt = targetAgents[i % targetAgents.length];
+      return {
+        updateOne: {
+          filter: { mobile: c.clean_mobile },
+          update: { $set: { assigned_agent_id: tgt.id, assigned_agent_name: tgt.name, updated_at: now } },
+        },
+      };
+    });
+    try { await db.collection('tbl_leads').bulkWrite(leadOps, { ordered: false }); } catch { /* best effort */ }
+
+    return res.json({
+      success: true,
+      count: convos.length,
+      message: `Successfully reassigned ${convos.length} lead(s) from ${sourceName} across ${targetAgents.length} active agent(s).`,
+      target_agents: targetAgents.map((a) => a.name),
+    });
+  } catch (err) {
+    console.error('[reassignAgentLeads Error]:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to reassign agent leads.' });
+  }
+}
+
+/**
+ * GET /api/crm/admin-leaderboard — Side-by-side telecaller metrics comparison for admin overview.
+ */
+export async function getAdminLeaderboard(req, res) {
+  try {
+    if (isCrmAgent(req)) return res.status(403).json({ success: false, message: 'Not authorized.' });
+    const db = getAppDb();
+    const agents = await getActiveAgents(db);
+    const now = new Date();
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const CALL_STATUSES = ['first_call_complete', 'second_call_complete', 'third_call_complete', 'call_completed'];
+
+    const leaderboard = await Promise.all(
+      agents.map(async (a) => {
+        const convos = await db.collection('tbl_crm_conversation').find(
+          { assigned_agent_id: a.id },
+          { projection: { clean_mobile: 1, lead_status: 1, status_history: 1, last_message_at: 1, updated_at: 1 } }
+        ).toArray();
+
+        let callsToday = 0;
+        let talkSecToday = 0;
+        let shortCallsToday = 0;
+        let lastActive = null;
+
+        for (const c of convos) {
+          for (const h of (c.status_history || [])) {
+            const hAt = h.at ? new Date(h.at) : null;
+            if (hAt && (!lastActive || hAt > lastActive)) lastActive = hAt;
+            if (hAt && hAt >= startToday && CALL_STATUSES.includes(h.status)) {
+              callsToday += 1;
+              const dur = Number(h.duration) || 0;
+              talkSecToday += dur;
+              if (dur < 10) shortCallsToday += 1;
+            }
+          }
+        }
+
+        const interested = convos.filter((c) => c.lead_status === 'interested').length;
+        const converted = convos.filter((c) => ['converted', 'registration_completed'].includes(c.lead_status)).length;
+        const untouched = convos.filter((c) => ['none', 'new', 'assigned'].includes(c.lead_status)).length;
+
+        const mins = Math.floor(talkSecToday / 60);
+        const hrs = Math.floor(mins / 60);
+        const remMins = mins % 60;
+        const talkTimeStr = hrs > 0 ? `${hrs}h ${remMins}m` : `${mins}m`;
+
+        return {
+          id: a.id,
+          name: a.name,
+          total_leads: convos.length,
+          calls_today: callsToday,
+          target_pct: Math.min(100, Math.round((callsToday / 30) * 100)),
+          talk_seconds: talkSecToday,
+          talk_time_formatted: talkTimeStr,
+          interested,
+          converted,
+          short_calls: shortCallsToday,
+          untouched_leads: untouched,
+          last_active: lastActive,
+        };
+      })
+    );
+
+    leaderboard.sort((x, y) => y.calls_today - x.calls_today);
+    return res.json({ success: true, leaderboard });
+  } catch (err) {
+    console.error('[getAdminLeaderboard Error]:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to fetch leaderboard.' });
   }
 }
 

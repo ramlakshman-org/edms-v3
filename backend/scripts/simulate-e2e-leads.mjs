@@ -20,9 +20,9 @@ const TAMIL_NAMES = [
 ];
 
 const CONSTITUENCIES = [
-  { ac_no: 18, name: 'Harbour', dist: 'Chennai' },
+  { ac_no: 33, name: 'Thiru-Vi-Ka-Nagar', dist: 'Chennai' },
   { ac_no: 20, name: 'Thousand Lights', dist: 'Chennai' },
-  { ac_no: 24, name: 'Thiru-Vi-Ka-Nagar', dist: 'Chennai' },
+  { ac_no: 18, name: 'Harbour', dist: 'Chennai' },
   { ac_no: 13, name: 'Kolathur', dist: 'Chennai' },
   { ac_no: 118, name: 'Coimbatore South', dist: 'Coimbatore' },
   { ac_no: 89, name: 'Salem North', dist: 'Salem' },
@@ -95,12 +95,20 @@ async function runSimulation() {
       first_name: name.split(' ')[0],
       last_name: name.split(' ').slice(1).join(' '),
       mobile_no: mobile,
-      passcode: hashedPasscode,
-      user_group_id: 2, // Candidate / Citizen
-      assembly_no: consti.ac_no,
+      password: hashedPasscode,
+      password_str: '123456',
+      user_group_id: 11, // Booth Candidate
+      assembly_id: 33,
+      assembly_no: 33,
       party_name: party,
       is_active: 1,
       is_paid: i % 2 === 0 ? 1 : 0,
+      paid_status: i % 2 === 0 ? 'Yes' : 'No',
+      booths: [
+        { assembly_no: 33, part_no: 1 },
+        { assembly_no: 33, part_no: 2 },
+        { assembly_no: 33, part_no: 3 },
+      ],
       created_at: now,
       updated_at: now,
     };

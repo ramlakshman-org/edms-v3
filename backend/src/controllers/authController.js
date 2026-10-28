@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { markLeadRegistered, recordWebsiteEvent, markCrmLeadStatus } from '../services/leads.js';
+import { assignAgentRoundRobin } from './whatsappController.js';
 import { getFeatureSettings, isOnFor, WEBSITE_LOGIN_TEXT, BOT_NUMBER } from '../services/features.js';
 import { onRegistered } from '../services/reminders.js';
 import { signToken, revokeToken } from '../middleware/auth.js';
@@ -329,25 +330,42 @@ export async function register(req, res) {
     await markLeadRegistered(db, mobile); // Incomplete registrations: this number now has an account
     await markCrmLeadStatus(db, mobile, 'registration_completed', 'Website registration completed'); // keep the CRM pipeline in sync
 
+    // Instant Real-Time Assignment: resolve active telecaller round-robin if unassigned
+    let assignedAgent = null;
+    const existingCrm = await db.collection('tbl_crm_conversation').findOne({ clean_mobile: mobile }, { projection: { assigned_agent_id: 1, assigned_agent_name: 1 } });
+    if (!existingCrm?.assigned_agent_id) {
+      assignedAgent = await assignAgentRoundRobin(db).catch(() => null);
+    }
+
     // Ensure candidate record is in tbl_crm_conversation with details for telecalling
+    const crmSet = {
+      contact_name: fullName,
+      district: b.district || '',
+      assembly: assemblyName || (assemblyId ? String(assemblyId) : ''),
+      position: b.position || '',
+      booth_count: rawBooths.length,
+      lead_status: 'registration_completed',
+      is_registered: true,
+      updated_at: new Date(),
+    };
+    if (assignedAgent) {
+      crmSet.assigned_agent_id = assignedAgent.id;
+      crmSet.assigned_agent_name = assignedAgent.name;
+      crmSet.assigned_at = new Date();
+      crmSet.assigned_by = 'round_robin';
+    }
+
     await db.collection('tbl_crm_conversation').updateOne(
       { clean_mobile: mobile },
       {
-        $set: {
-          contact_name: fullName,
-          district: b.district || '',
-          assembly: assemblyName || (assemblyId ? String(assemblyId) : ''),
-          position: b.position || '',
-          booth_count: rawBooths.length,
-          lead_status: 'registration_completed',
-          is_registered: true,
-          updated_at: new Date(),
-        },
+        $set: crmSet,
         $setOnInsert: {
           clean_mobile: mobile,
           source: 'website',
-          assigned_agent_id: null,
-          assigned_agent_name: null,
+          assigned_agent_id: assignedAgent ? assignedAgent.id : null,
+          assigned_agent_name: assignedAgent ? assignedAgent.name : null,
+          assigned_at: assignedAgent ? new Date() : null,
+          assigned_by: assignedAgent ? 'round_robin' : null,
           taken: false,
           unread_count: 0,
           created_at: new Date(),

@@ -114,6 +114,8 @@ r.post('/crm/send-credentials', crmAccess, crm.sendCredentials);
 r.post('/crm/send-flow', crmAccess, crm.sendFlow);
 r.get('/crm/agents', adminOnly, crm.listAgents);
 r.post('/crm/distribute-leads', adminOnly, crm.distributeLeads);
+r.post('/crm/reassign-agent-leads', adminOnly, crm.reassignAgentLeads);
+r.get('/crm/admin-leaderboard', adminOnly, crm.getAdminLeaderboard);
 r.get('/crm/settings', crmAccess, crm.getCrmSettings);        // telecallers read (to know if claim is on)
 r.put('/crm/settings', adminOnly, crm.updateCrmSettings);     // only admin changes
 r.post('/crm/conversations/:phone/claim', crmAccess, crm.claimLead);

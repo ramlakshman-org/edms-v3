@@ -55,6 +55,7 @@ export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace
 
   const queueParam = searchParams.get('queue'); // 'incomplete' | 'registered'
   const scopeParam = searchParams.get('scope') || scope; // 'paid' | 'all'
+  const filterParam = searchParams.get('filter') || ''; // 'overdue_callbacks' | 'short_calls'
 
   const activeQueue = queueParam === 'incomplete' || scopeParam === 'unregistered'
     ? 'incomplete'
@@ -103,12 +104,13 @@ export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace
     if (search.trim()) params.search = search.trim();
     if (statusFilter !== 'all') params.lead_status = statusFilter;
     if (isAdmin && agentId) params.agent_id = agentId;
+    if (filterParam) params.filter = filterParam;
     api.get('/crm/conversations', { params })
       .then(({ data }) => { setRows(data.conversations || []); setTotal(data.total || 0); setErr(''); })
       .catch((e) => setErr(loadError(e, 'conversations')))
       .finally(() => setLoading(false));
   };
-  useEffect(load, [page, agentId, statusFilter]);
+  useEffect(load, [page, agentId, statusFilter, filterParam]);
   useEffect(() => { const t = setTimeout(() => { setPage(1); load(); }, 350); return () => clearTimeout(t); }, [search]);
 
   // Queue counts calculated across the loaded dataset
@@ -553,6 +555,34 @@ export default function CrmLeads({ scope = 'all', title = 'Telecalling Workspace
           <summary><Info size={15} /> How payment follow-up works</summary>
           <p>Candidates who paid the UPI QR and upgraded to Active Pro are listed here. Verify their payment status, assist with candidate setup, and follow up with interested leads for renewal or additional booth coverage.</p>
         </details>
+      )}
+
+      {filterParam && (
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {filterParam === 'overdue_callbacks' ? <AlertTriangle size={18} color="#2563eb" /> : <PhoneOff size={18} color="#dc2626" />}
+            <div>
+              <strong style={{ color: '#1e40af', fontSize: 13.5 }}>
+                {filterParam === 'overdue_callbacks' ? 'Overdue Callbacks Queue' : 'Short Calls Audit Queue'}:
+              </strong>
+              <span style={{ color: '#3b82f6', marginLeft: 6, fontSize: 13 }}>
+                {filterParam === 'overdue_callbacks'
+                  ? 'Showing leads promised a callback where scheduled time or 24 hours has elapsed.'
+                  : 'Showing leads with calls logged as completed but under 10 seconds duration.'} ({total} leads)
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="cv-btn cv-btn--ghost cv-btn--sm"
+            onClick={() => {
+              searchParams.delete('filter');
+              setSearchParams(searchParams);
+            }}
+          >
+            Clear Filter & Show All
+          </button>
+        </div>
       )}
 
       <Card flush className={activeQueue === 'paid' ? 'cv-pay-queue' : undefined}>
@@ -1086,6 +1116,11 @@ function LeadDrawer({ contact, agents, isAdmin, canClaim, onClose, onChanged, se
                           {h.duration ? ` · ${h.duration}s talk time` : ''}
                         </span>
                         <Pill tone={sm.tone} dot>{sm.label}</Pill>
+                        {h.short_call && (
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '2px 6px', borderRadius: 4 }}>
+                            ⚠️ Short Call (&lt;10s)
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--cv-muted, #64748b)' }}>
                         {fmtDateTime(h.at)}

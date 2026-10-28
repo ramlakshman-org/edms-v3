@@ -24,7 +24,7 @@ import {
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { PageHeader, Card, Kpi, BarChart, Funnel, BarList, Pill } from '../../civic/kit.jsx';
-import { Select, Button, loadError, fmtDateTime, waLink } from '../../civic/ui.jsx';
+import { Select, Button, Modal, loadError, fmtDateTime, waLink } from '../../civic/ui.jsx';
 import { statusMeta } from '../../civic/leadStatus.js';
 import { WebPhoneBadge } from '../../civic/webphone.jsx';
 
@@ -48,10 +48,14 @@ export default function TelecallerDashboard({ adminView = false }) {
   const [agents, setAgents] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [teamStats, setTeamStats] = useState(null);
+  const [leaderboard, setLeaderboard] = useState([]);
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [reassignModal, setReassignModal] = useState(null);
+  const [reassignBusy, setReassignBusy] = useState(false);
+  const [reassignMsg, setReassignMsg] = useState('');
 
   // Load team members and agents when in adminView
   const loadTeam = useCallback(() => {
@@ -60,14 +64,39 @@ export default function TelecallerDashboard({ adminView = false }) {
       api.get('/crm/agents'),
       api.get('/team/members').catch(() => ({ data: { members: [] } })),
       api.get('/team/stats').catch(() => ({ data: { stats: null } })),
+      api.get('/crm/admin-leaderboard').catch(() => ({ data: { leaderboard: [] } })),
+      api.get('/crm/team-stats').catch(() => ({ data: { stats: null } })),
     ])
-      .then(([ag, mem, st]) => {
+      .then(([ag, mem, st, lb, ts]) => {
         setAgents(ag.data.agents || []);
         setTeamMembers(mem.data.members || []);
         setTeamStats(st.data.stats || null);
+        setLeaderboard(lb.data.leaderboard || []);
+        if (!agentId && ts.data.stats) setStats(ts.data.stats);
       })
       .catch(() => {});
-  }, [adminView]);
+  }, [adminView, agentId]);
+
+  const openReassign = (sourceId, sourceName, count) => {
+    setReassignMsg('');
+    setReassignModal({ sourceId, sourceName, count });
+  };
+
+  const executeReassign = () => {
+    if (!reassignModal?.sourceId) return;
+    setReassignBusy(true);
+    setReassignMsg('');
+    api.post('/crm/reassign-agent-leads', { source_agent_id: reassignModal.sourceId, uncontacted_only: true })
+      .then(({ data }) => {
+        setReassignMsg(data.message || 'Leads successfully reassigned.');
+        setTimeout(() => {
+          setReassignModal(null);
+          refresh();
+        }, 1200);
+      })
+      .catch((e) => setReassignMsg(e?.response?.data?.message || 'Failed to reassign leads.'))
+      .finally(() => setReassignBusy(false));
+  };
 
   const loadScoped = useCallback(() => {
     if (adminView && !agentId) {
@@ -176,6 +205,38 @@ export default function TelecallerDashboard({ adminView = false }) {
       {/* ── Admin View Overview (when no agent is selected) ── */}
       {adminView && !agentId && (
         <>
+          {/* Overdue Callbacks Warning Banner */}
+          {stats?.overdue_callbacks > 0 && (
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0 }} />
+                <div>
+                  <strong style={{ color: '#92400e', fontSize: 13.5 }}>{stats.overdue_callbacks} Overdue Callback{stats.overdue_callbacks > 1 ? 's' : ''} (&gt;24h):</strong>
+                  <span style={{ color: '#b45309', marginLeft: 6, fontSize: 13 }}>Candidates promised a callback whose scheduled time has passed or exceeded 24 hours.</span>
+                </div>
+              </div>
+              <Link to="/team/crm?filter=overdue_callbacks" className="cv-btn cv-btn--sm" style={{ background: '#d97706', color: '#fff', border: 'none' }}>
+                Inspect Overdue Leads
+              </Link>
+            </div>
+          )}
+
+          {/* Short Calls Audit Banner */}
+          {stats?.short_calls > 0 && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <PhoneOff size={20} color="#dc2626" style={{ flexShrink: 0 }} />
+                <div>
+                  <strong style={{ color: '#991b1b', fontSize: 13.5 }}>{stats.short_calls} Short Call{stats.short_calls > 1 ? 's' : ''} (&lt;10s duration):</strong>
+                  <span style={{ color: '#b91c1c', marginLeft: 6, fontSize: 13 }}>Completed calls with less than 10 seconds talk time flagged for quality review.</span>
+                </div>
+              </div>
+              <Link to="/team/crm?filter=short_calls" className="cv-btn cv-btn--sm" style={{ background: '#dc2626', color: '#fff', border: 'none' }}>
+                Review Short Calls
+              </Link>
+            </div>
+          )}
+
           {teamStats && (
             <div className="cv-kpis cv-kpis--even" style={{ marginBottom: 20 }}>
               <Kpi
@@ -220,6 +281,86 @@ export default function TelecallerDashboard({ adminView = false }) {
                 to="/team/payments"
               />
             </div>
+          )}
+
+          {/* Side-by-Side Calling Velocity Leaderboard */}
+          {leaderboard.length > 0 && (
+            <Card
+              title="Today’s Calling Velocity & Leaderboard"
+              meta="Real-time comparative performance across all active telecallers today (Benchmark: 30 calls/day)."
+            >
+              <div style={{ overflowX: 'auto' }}>
+                <table className="cv-table" style={{ width: '100%', fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left' }}>Telecaller</th>
+                      <th style={{ textAlign: 'right' }}>Calls Today</th>
+                      <th style={{ textAlign: 'center' }}>Daily Target (30)</th>
+                      <th style={{ textAlign: 'right' }}>Total Talk Time</th>
+                      <th style={{ textAlign: 'right' }}>Interested</th>
+                      <th style={{ textAlign: 'right' }}>Converted</th>
+                      <th style={{ textAlign: 'right' }}>Untouched Leads</th>
+                      <th style={{ textAlign: 'left' }}>Last Active</th>
+                      <th style={{ textAlign: 'center' }}>Quick Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leaderboard.map((a) => (
+                      <tr key={a.id}>
+                        <td>
+                          <strong>{a.name}</strong>
+                          <div className="cv-muted" style={{ fontSize: 11 }}>{a.total_leads} total leads</div>
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 600, color: a.calls_today >= 30 ? '#16a34a' : '#2563eb' }}>
+                          {a.calls_today}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
+                            <div style={{ width: 60, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ width: `${a.target_pct}%`, height: '100%', background: a.target_pct >= 100 ? '#16a34a' : '#2563eb' }} />
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: 500 }}>{a.target_pct}%</span>
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>{a.talk_time_formatted}</td>
+                        <td style={{ textAlign: 'right', color: '#16a34a', fontWeight: 500 }}>{a.interested}</td>
+                        <td style={{ textAlign: 'right', color: '#9333ea', fontWeight: 600 }}>{a.converted}</td>
+                        <td style={{ textAlign: 'right', color: a.untouched_leads > 20 ? '#d97706' : '#64748b' }}>
+                          {a.untouched_leads}
+                        </td>
+                        <td>
+                          <span className="cv-muted" style={{ fontSize: 12 }}>
+                            {a.last_active ? fmtDateTime(a.last_active) : 'No calls yet'}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                            <button
+                              type="button"
+                              className="cv-btn cv-btn--ghost cv-btn--sm"
+                              style={{ fontSize: 11, padding: '2px 8px' }}
+                              onClick={() => setParams({ agent: a.id })}
+                            >
+                              Inspect
+                            </button>
+                            {a.untouched_leads > 0 && (
+                              <button
+                                type="button"
+                                className="cv-btn cv-btn--ghost cv-btn--sm"
+                                style={{ fontSize: 11, padding: '2px 8px', color: '#dc2626' }}
+                                onClick={(e) => { e.stopPropagation(); openReassign(a.id, a.name, a.untouched_leads); }}
+                              >
+                                Reassign ({a.untouched_leads})
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           )}
 
           <Card
@@ -581,6 +722,38 @@ export default function TelecallerDashboard({ adminView = false }) {
           </Card>
         </>
       )}
+
+      {/* Modal: Reassign Untouched Leads */}
+      <Modal
+        open={!!reassignModal}
+        title={reassignModal ? `Reassign Untouched Leads from ${reassignModal.sourceName}` : 'Reassign Leads'}
+        onClose={() => setReassignModal(null)}
+        width={500}
+      >
+        {reassignModal && (
+          <div style={{ display: 'grid', gap: 14 }}>
+            <p style={{ margin: 0, fontSize: 13.5, color: '#1e293b' }}>
+              Are you sure you want to redistribute <strong>{reassignModal.count} untouched lead(s)</strong> assigned to <strong>{reassignModal.sourceName}</strong>?
+            </p>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '12px 14px', borderRadius: 8, fontSize: 12.5, color: '#475569', lineHeight: 1.6 }}>
+              • <strong>Safe & Targeted:</strong> Only uncalled leads (0 attempts) are reassigned.<br />
+              • <strong>Round-Robin:</strong> Leads are distributed evenly across the other active telecallers.<br />
+              • <strong>Sticky Integrity:</strong> In-progress and completed candidate threads stay untouched.
+            </div>
+            {reassignMsg && (
+              <div className={`cv-alert ${reassignMsg.includes('Success') || reassignMsg.includes('reassigned') ? 'cv-alert--ok' : 'cv-alert--bad'}`}>
+                {reassignMsg}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+              <Button variant="ghost" onClick={() => setReassignModal(null)} disabled={reassignBusy}>Cancel</Button>
+              <Button onClick={executeReassign} disabled={reassignBusy} style={{ background: '#dc2626', color: '#fff', border: 'none' }}>
+                {reassignBusy ? 'Reassigning…' : `Reassign ${reassignModal.count} Leads`}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
